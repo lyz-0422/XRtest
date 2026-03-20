@@ -1421,6 +1421,55 @@ try {
     white-space:nowrap; transition:all .15s;
   }
   .kw-add-btn:hover { background:var(--accent4); color:#f5f5f4; }
+
+  /* ── 回饋問卷設計器 ── */
+  .fbq-item {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 18px;
+    margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .fbq-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .fbq-type-sel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 10px; font-size: 12px;
+    font-family: inherit; color: var(--text-muted); outline: none; cursor: pointer;
+  }
+  .fbq-text-inp {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px; font-size: 13px;
+    font-family: inherit; color: var(--text); outline: none;
+    transition: border-color .2s; min-width: 200px;
+  }
+  .fbq-text-inp:focus { border-color: var(--accent); }
+  .fbq-opts-wrap { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .fbq-opt-inp {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 10px; font-size: 12px;
+    font-family: inherit; color: var(--text); outline: none; width: 110px;
+    transition: border-color .2s;
+  }
+  .fbq-opt-inp:focus { border-color: var(--accent); }
+  .fbq-del-btn {
+    background: none; border: 1px solid transparent; color: var(--text-dim);
+    border-radius: 5px; padding: 4px 8px; font-size: 12px;
+    cursor: pointer; font-family: inherit; transition: all .15s;
+  }
+  .fbq-del-btn:hover { border-color: var(--accent3); color: var(--accent3); }
+
+  /* 回饋記錄表 */
+  .fb-resp-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px;
+  }
+  .fb-resp-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .fb-resp-name { font-size: 13px; font-weight: 700; }
+  .fb-resp-time { font-size: 11px; color: var(--text-dim); }
+  .fb-resp-row { display: flex; gap: 8px; font-size: 13px; margin-bottom: 6px; }
+  .fb-resp-q { color: var(--text-muted); flex-shrink: 0; min-width: 160px; }
+  .fb-resp-a { color: var(--text); font-weight: 600; }
 </style>
 
 </head>
@@ -2000,61 +2049,36 @@ try {
 
       <!-- ── FEEDBACK ── -->
       <div id="page-feedback" style="display:none;">
-        <div class="page-header">
-          <div class="page-title">學生回饋表單</div>
-          <div class="page-desc">嵌入 Google 表單供學生填答，並讀取回應結果</div>
+        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <div class="page-title">學生回饋問卷</div>
+            <div class="page-desc">設計課後回饋問題，並查看學生的填答結果</div>
+          </div>
+          <button class="btn-small" onclick="loadFeedbackData()">↺ 重新整理回饋記錄</button>
         </div>
 
-        <!-- 表單網址設定 -->
-        <div class="card">
-          <div class="card-title"><span class="card-title-icon">🔗</span>表單連結設定</div>
-          <div class="form-group">
-            <label>Google 表單網址（學生填答頁）</label>
-            <input type="text" id="fb-form-url" class="fb-input"
-              placeholder="https://docs.google.com/forms/d/e/.../viewform"
-              value="https://docs.google.com/forms/d/e/1FAIpQLSca_LXJsGql5gfQw-KoitkMZy5m8Talu6iaZATxt5UKPqzKrQ/viewform">
+        <!-- 問卷設計器 -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-title" style="justify-content:space-between;">
+            <span><span class="card-title-icon">✏️</span>問卷題目設計</span>
+            <button class="btn-small" style="color:var(--accent2);border-color:rgba(138,170,142,.4);" onclick="saveFeedbackQuestions()">☁ 儲存題目到 Firebase</button>
           </div>
-          <div class="form-group">
-            <label>Google 試算表網址（表單回應資料）</label>
-            <div style="font-size:11px; color:var(--text-dim); margin-bottom:6px;">
-              請到 Google 表單 → 回應 → 試算表圖示，建立連結試算表後，把網址貼在這裡
-            </div>
-            <input type="text" id="fb-response-sheet" class="fb-input"
-              placeholder="https://docs.google.com/spreadsheets/d/...">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;line-height:1.6;">
+            設定完成後按「儲存」，學生下次完成所有單元後會自動出現這份問卷。
           </div>
-          <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <button class="btn-primary" style="max-width:160px; padding:10px; font-size:13px;" onclick="saveFeedbackConfig()">儲存設定</button>
-            <button class="btn-small" onclick="previewResponseData()">讀取回應資料 →</button>
-            <a id="fb-form-share-link" href="https://docs.google.com/forms/d/e/1FAIpQLSca_LXJsGql5gfQw-KoitkMZy5m8Talu6iaZATxt5UKPqzKrQ/viewform" target="_blank"
-              class="btn-small" style="text-decoration:none; display:inline-flex; align-items:center;">
-              分享表單給學生 ↗
-            </a>
-          </div>
+          <div id="fbq-list"></div>
+          <button class="btn-add" style="margin-top:12px;" onclick="addFbQuestion()">＋ 新增題目</button>
         </div>
 
-        <!-- 表單預覽（iframe 嵌入） -->
+        <!-- 學生回饋記錄 -->
         <div class="card">
           <div class="card-title" style="justify-content:space-between;">
-            <span><span class="card-title-icon">📋</span>表單預覽</span>
-            <button class="btn-small" onclick="reloadFormPreview()">重新載入</button>
+            <span><span class="card-title-icon">📊</span>學生回饋記錄</span>
+            <span id="fb-resp-meta" style="font-size:12px;color:var(--text-muted);"></span>
           </div>
-          <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">
-            以下為學生看到的填答介面，老師可在此確認表單內容是否正確。
+          <div id="fb-resp-area">
+            <div class="dash-loading"><span class="dash-spinner"></span>讀取中…</div>
           </div>
-          <div style="border:1px solid var(--border); border-radius:8px; overflow:hidden; background:white;">
-            <iframe id="form-iframe"
-              src="https://docs.google.com/forms/d/e/1FAIpQLSca_LXJsGql5gfQw-KoitkMZy5m8Talu6iaZATxt5UKPqzKrQ/viewform?embedded=true"
-              width="100%" height="600" frameborder="0" marginheight="0" marginwidth="0"
-              style="display:block;">
-              載入中…
-            </iframe>
-          </div>
-        </div>
-
-        <!-- 回應資料讀取 -->
-        <div class="card" id="response-card" style="display:none;">
-          <div class="card-title"><span class="card-title-icon">📊</span>學生回應資料</div>
-          <div id="response-table-area"></div>
         </div>
       </div>
 
@@ -2317,6 +2341,10 @@ try {
     // 切換到學生頁時自動從 Firebase 讀取
     if (page === 'students' && window._loadStudentsFromFirebase) {
       window._loadStudentsFromFirebase();
+    }
+    // 切換到回饋頁時自動載入問卷設計器與回饋記錄
+    if (page === 'feedback') {
+      initFeedbackPage();
     }
   }
 
@@ -3595,6 +3623,155 @@ try {
   // 進入儀表板頁面時自動讀取
   document.addEventListener('DOMContentLoaded', () => {
     setTimeout(loadDashboard, 800);
+  });
+
+  // ══════════════════════════════════════════
+  //  回饋問卷管理
+  // ══════════════════════════════════════════
+  const defaultFbQs = [
+    { id:'fq1', type:'star',   text:'今天的課程你學得如何？',      opts:[] },
+    { id:'fq2', type:'single', text:'你覺得今天的題目難不難？',    opts:['很簡單','還好','有點難','很難'] },
+    { id:'fq3', type:'text',   text:'有什麼還不懂的地方嗎？（選填）', opts:[] }
+  ];
+  let fbQuestions = JSON.parse(JSON.stringify(defaultFbQs));
+
+  // 進入回饋頁時載入
+  function initFeedbackPage() {
+    loadFbQuestionsFromFirebase();
+    loadFeedbackData();
+  }
+
+  async function loadFbQuestionsFromFirebase() {
+    if (!_fbdb) { renderFbQList(); return; }
+    try {
+      const snap = await _fbdb.collection('FeedbackQuestions').orderBy('order').get();
+      if (!snap.empty) {
+        fbQuestions = [];
+        snap.forEach(doc => fbQuestions.push({ id: doc.id, ...doc.data() }));
+      }
+    } catch(e) {}
+    renderFbQList();
+  }
+
+  function renderFbQList() {
+    const container = document.getElementById('fbq-list');
+    if (!container) return;
+    if (fbQuestions.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-dim);font-size:13px;padding:8px 0;">尚無題目，點下方「新增題目」</div>';
+      return;
+    }
+    container.innerHTML = fbQuestions.map((q, i) => buildFbQHtml(q, i)).join('');
+  }
+
+  function buildFbQHtml(q, i) {
+    const typeOpts = ['star','single','text'].map(t =>
+      `<option value="${t}" ${q.type===t?'selected':''}>${t==='star'?'⭐ 星星評分':t==='single'?'📋 單選題':'✏️ 文字輸入'}</option>`
+    ).join('');
+    let optsHtml = '';
+    if (q.type === 'single') {
+      const opts = q.opts || [];
+      optsHtml = `<div class="fbq-opts-wrap">
+        ${opts.map((o, oi) => `<input class="fbq-opt-inp" value="${o.replace(/"/g,'&quot;')}" placeholder="選項${oi+1}"
+          onchange="fbQuestions[${i}].opts[${oi}]=this.value">`).join('')}
+        <button class="fbq-del-btn" onclick="addFbOpt(${i})" title="新增選項">＋</button>
+        ${opts.length>1?`<button class="fbq-del-btn" onclick="removeFbOpt(${i})" title="刪除最後選項">－</button>`:''}
+      </div>`;
+    } else if (q.type === 'star') {
+      optsHtml = `<div style="font-size:12px;color:var(--text-dim);">學生會看到 ⭐⭐⭐⭐⭐ 讓他們點選</div>`;
+    } else {
+      optsHtml = `<div style="font-size:12px;color:var(--text-dim);">學生會看到文字輸入框</div>`;
+    }
+    return `<div class="fbq-item" id="fbqitem-${i}">
+      <div class="fbq-row">
+        <span style="font-size:12px;font-weight:700;color:var(--accent4);flex-shrink:0;">第 ${i+1} 題</span>
+        <select class="fbq-type-sel" onchange="changeFbQType(${i},this.value)">${typeOpts}</select>
+        <input class="fbq-text-inp" value="${(q.text||'').replace(/"/g,'&quot;')}" placeholder="輸入問題文字"
+          oninput="fbQuestions[${i}].text=this.value">
+        <button class="fbq-del-btn" onclick="deleteFbQ(${i})">✕ 刪除</button>
+      </div>
+      ${optsHtml}
+    </div>`;
+  }
+
+  function changeFbQType(i, newType) {
+    fbQuestions[i].type = newType;
+    if (newType === 'single' && (!fbQuestions[i].opts || fbQuestions[i].opts.length === 0))
+      fbQuestions[i].opts = ['選項A','選項B','選項C','選項D'];
+    else if (newType !== 'single') fbQuestions[i].opts = [];
+    renderFbQList();
+  }
+  function addFbOpt(i) { fbQuestions[i].opts.push('新選項'); renderFbQList(); }
+  function removeFbOpt(i) { if(fbQuestions[i].opts.length>1) fbQuestions[i].opts.pop(); renderFbQList(); }
+  function addFbQuestion() {
+    fbQuestions.push({ id:'fq'+(Date.now()), type:'star', text:'', opts:[] });
+    renderFbQList();
+  }
+  function deleteFbQ(i) {
+    if (!confirm('確定刪除這道題目？')) return;
+    fbQuestions.splice(i, 1);
+    renderFbQList();
+  }
+
+  async function saveFeedbackQuestions() {
+    if (!_fbdb) { toast('Firebase 未連線'); return; }
+    try {
+      const batch = _fbdb.batch();
+      // 先刪舊的
+      const old = await _fbdb.collection('FeedbackQuestions').get();
+      old.forEach(doc => batch.delete(doc.ref));
+      // 寫新的
+      fbQuestions.forEach((q, i) => {
+        const ref = _fbdb.collection('FeedbackQuestions').doc(q.id || ('fq'+i));
+        batch.set(ref, { text: q.text||'', type: q.type||'star', opts: q.opts||[], order: i });
+      });
+      await batch.commit();
+      toast('✓ 問卷題目已儲存！學生下次完成後會看到新問卷');
+    } catch(e) { toast('儲存失敗：' + e.message); }
+  }
+
+  // ── 讀取學生回饋記錄 ──
+  async function loadFeedbackData() {
+    const area = document.getElementById('fb-resp-area');
+    const meta = document.getElementById('fb-resp-meta');
+    if (!area) return;
+    area.innerHTML = '<div class="dash-loading"><span class="dash-spinner"></span>讀取中…</div>';
+    if (!_fbdb) { area.innerHTML = '<div class="dash-loading">Firebase 未連線</div>'; return; }
+    try {
+      const snap = await _fbdb.collection('Feedback').orderBy('timestamp','desc').limit(50).get();
+      if (meta) meta.textContent = snap.size + ' 筆';
+      if (snap.empty) { area.innerHTML = '<div class="dash-loading">尚無回饋記錄</div>'; return; }
+
+      let html = '';
+      snap.forEach(doc => {
+        const d = doc.data();
+        const ts = d.timestamp?.toDate ? d.timestamp.toDate() : new Date();
+        const timeStr = ts.toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+        const scoreStr = d.maxScore>0 ? `・${d.totalScore}/${d.maxScore} 分` : '';
+        html += `<div class="fb-resp-card">
+          <div class="fb-resp-header">
+            <span class="fb-resp-name">${d.studentName||d.studentId}${scoreStr}</span>
+            <span class="fb-resp-time">${timeStr}</span>
+          </div>`;
+        (d.responses||[]).forEach(r => {
+          let ansDisp = r.answer;
+          if (r.type === 'star' && r.answer) ansDisp = '⭐'.repeat(r.answer) + ` (${r.answer}/5)`;
+          if (!ansDisp && ansDisp !== 0) ansDisp = '<span style="color:var(--text-dim)">（未填）</span>';
+          html += `<div class="fb-resp-row">
+            <span class="fb-resp-q">${r.questionText}</span>
+            <span class="fb-resp-a">${ansDisp}</span>
+          </div>`;
+        });
+        html += `</div>`;
+      });
+      area.innerHTML = html;
+    } catch(e) {
+      area.innerHTML = `<div class="dash-loading" style="color:var(--accent3);">讀取失敗：${e.message}</div>`;
+    }
+  }
+
+  // 切換到回饋頁時自動載入
+  document.addEventListener('DOMContentLoaded', () => {
+    // 等待頁面切換時才載入
   });
 
 </script>

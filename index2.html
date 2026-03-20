@@ -556,6 +556,75 @@ body::before {
   .final-score-big { font-size: 50px; }
 }
 
+
+/* ── 課後回饋問卷 ── */
+.feedback-form-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px 22px;
+  margin-top: 20px;
+  box-shadow: var(--shadow);
+  animation: fadeUp .4s ease both;
+}
+.feedback-form-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: 18px; color: var(--accent4);
+  margin-bottom: 4px;
+}
+.feedback-form-sub {
+  font-size: 12px; color: var(--text-m);
+  margin-bottom: 20px;
+}
+.fb-q-block { margin-bottom: 20px; }
+.fb-q-label { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
+
+/* 星星評分 */
+.star-row { display:flex; gap:8px; }
+.star-btn {
+  background: none; border: none; font-size: 28px; cursor: pointer;
+  opacity: .35; transition: opacity .15s, transform .15s;
+  padding: 0; line-height: 1;
+}
+.star-btn:hover, .star-btn.active { opacity: 1; transform: scale(1.15); }
+
+/* 單選選項 */
+.fb-opts { display:flex; flex-wrap:wrap; gap:8px; }
+.fb-opt {
+  background: var(--surface2); border: 1.5px solid var(--border);
+  border-radius: 8px; padding: 8px 16px;
+  font-size: 13px; font-weight: 600; color: var(--text-m);
+  cursor: pointer; font-family: inherit; transition: all .15s;
+}
+.fb-opt:hover { border-color: var(--accent4); color: var(--accent4); }
+.fb-opt.sel {
+  background: rgba(144,150,168,.15);
+  border-color: var(--accent4); color: var(--accent4);
+}
+
+/* 文字輸入 */
+.fb-textarea {
+  width: 100%; min-height: 72px;
+  background: var(--surface2); border: 1.5px solid var(--border);
+  border-radius: 8px; padding: 10px 14px;
+  font-family: inherit; font-size: 13px; color: var(--text);
+  resize: vertical; outline: none; line-height: 1.6;
+  transition: border-color .2s;
+}
+.fb-textarea:focus { border-color: var(--accent4); }
+
+.btn-fb-submit {
+  width: 100%; background: var(--accent4); color: #f5f5f4;
+  border: none; border-radius: 8px; padding: 13px;
+  font-family: 'Fredoka One', cursive; font-size: 17px;
+  cursor: pointer; box-shadow: 0 3px 0 rgba(60,70,110,.25);
+  transition: opacity .15s; margin-top: 8px;
+}
+.btn-fb-submit:hover { opacity: .9; }
+.fb-sent {
+  text-align: center; padding: 20px;
+  font-size: 15px; font-weight: 600; color: var(--accent2);
+}
 </style>
 </head>
 <body>
@@ -605,7 +674,7 @@ body::before {
     </div>
     <div class="prog-wrap"><div class="prog-fill" id="prog-fill"></div></div>
   </div>
-  <div class="main-wrap"><div id="unit-area"></div></div>
+  <div class="main-wrap"><div id="unit-area"></div><div id="feedback-area"></div></div>
 </div>
 
 <script>
@@ -1029,6 +1098,8 @@ function addNextBtn(n) {
         </div>
       </div>`;
     saveUnitScore(n, u3Score, u3Max);
+    // 載入並渲染課後回饋問卷
+    setTimeout(() => loadFeedbackForm(), 400);
   } else {
     // 單元結算
     const data    = courseData['qt'+n] || defaultUnits['qt'+n];
@@ -1384,6 +1455,125 @@ async function restartFromSubmitted() {
     '<div style="padding:60px;text-align:center;color:var(--text-m);font-size:15px;font-weight:600;">⏳ 載入題目中…</div>';
   await loadCourseData();
   restartQuiz();
+}
+
+
+// ══════════════════════════════════════════
+//  課後回饋問卷
+// ══════════════════════════════════════════
+
+// 預設問題（Firebase FeedbackQuestions 讀不到時的備援）
+const defaultFeedbackQs = [
+  { id:'fq1', type:'star',   text:'今天的課程你學得如何？' },
+  { id:'fq2', type:'single', text:'你覺得今天的題目難不難？',
+    opts:['很簡單','還好','有點難','很難'] },
+  { id:'fq3', type:'text',   text:'有什麼還不懂的地方嗎？（選填）' }
+];
+
+let feedbackQs = [];
+const feedbackAns = {};   // { fqId → value }
+
+async function loadFeedbackForm() {
+  const area = document.getElementById('feedback-area');
+  if (!area) return;
+
+  // 從 Firebase 讀取問題（老師在後台設定的）
+  feedbackQs = JSON.parse(JSON.stringify(defaultFeedbackQs));
+  if (db) {
+    try {
+      const snap = await db.collection('FeedbackQuestions').orderBy('order').get();
+      if (!snap.empty) {
+        feedbackQs = [];
+        snap.forEach(doc => feedbackQs.push({ id: doc.id, ...doc.data() }));
+      }
+    } catch(e) { /* 讀取失敗，使用預設 */ }
+  }
+
+  renderFeedbackForm(area);
+}
+
+function renderFeedbackForm(area) {
+  let html = `<div class="feedback-form-wrap">
+    <div class="feedback-form-title">📝 課後小回饋</div>
+    <div class="feedback-form-sub">花 30 秒告訴老師你今天的感受吧！</div>`;
+
+  feedbackQs.forEach(q => {
+    html += `<div class="fb-q-block" id="fbq-${q.id}">
+      <div class="fb-q-label">${q.text}</div>`;
+
+    if (q.type === 'star') {
+      html += `<div class="star-row">
+        ${[1,2,3,4,5].map(v =>
+          `<button class="star-btn" data-v="${v}" data-qid="${q.id}" onclick="setStar(this,'${q.id}',${v})">⭐</button>`
+        ).join('')}
+      </div>`;
+    } else if (q.type === 'single') {
+      const opts = q.opts || [];
+      html += `<div class="fb-opts">
+        ${opts.map(o =>
+          `<button class="fb-opt" data-qid="${q.id}" onclick="setOpt(this,'${q.id}','${o.replace(/'/g,"\'")}' )">${o}</button>`
+        ).join('')}
+      </div>`;
+    } else {
+      html += `<textarea class="fb-textarea" id="fbt-${q.id}" placeholder="寫下你的想法…（選填）"
+        oninput="feedbackAns['${q.id}']=this.value"></textarea>`;
+    }
+    html += `</div>`;
+  });
+
+  html += `<button class="btn-fb-submit" onclick="submitFeedback()">送出回饋 💌</button>
+  </div>`;
+
+  area.innerHTML = html;
+  area.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function setStar(btn, qid, v) {
+  feedbackAns[qid] = v;
+  document.querySelectorAll(`.star-btn[data-qid="${qid}"]`).forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.v) <= v);
+  });
+}
+
+function setOpt(btn, qid, val) {
+  feedbackAns[qid] = val;
+  document.querySelectorAll(`.fb-opt[data-qid="${qid}"]`).forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+}
+
+async function submitFeedback() {
+  // 收集文字題答案
+  feedbackQs.forEach(q => {
+    if (q.type === 'text') {
+      const ta = document.getElementById('fbt-' + q.id);
+      if (ta) feedbackAns[q.id] = ta.value.trim();
+    }
+  });
+
+  // 存入 Firebase Feedback 集合
+  if (db) {
+    try {
+      const responses = feedbackQs.map(q => ({
+        questionId:   q.id,
+        questionText: q.text,
+        type:         q.type,
+        answer:       feedbackAns[q.id] !== undefined ? feedbackAns[q.id] : null
+      }));
+      await db.collection('Feedback').add({
+        studentId:   student.sid,
+        studentName: student.name,
+        totalScore,
+        maxScore,
+        responses,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch(e) { console.warn('回饋存檔失敗：', e.message); }
+  }
+
+  const area = document.getElementById('feedback-area');
+  if (area) area.innerHTML = `<div class="feedback-form-wrap">
+    <div class="fb-sent">💌 謝謝你的回饋！老師收到了 😊</div>
+  </div>`;
 }
 
 // ── 登出 / 回到登入頁 ──
