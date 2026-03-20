@@ -1,11 +1,233 @@
 <!DOCTYPE html>
-<html>
-<head><title>我的 XR 專案列表</title></head>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIXplore・特教 AI 教學系統</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Fredoka+One&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:      #edeef0;
+  --surface: #f5f5f4;
+  --border:  #d8d9db;
+  --accent:  #7896a8;
+  --accent2: #8aaa8e;
+  --accent3: #b08a84;
+  --text:    #3a3d42;
+  --text-m:  #7b8087;
+  --shadow:  0 2px 16px rgba(100,110,120,.10);
+  --shadow-lg: 0 8px 40px rgba(100,110,120,.15);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Noto Sans TC', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 格紋背景 */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(120,150,168,.06) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(120,150,168,.06) 40px);
+  pointer-events: none;
+}
+
+/* 裝飾圓 */
+body::after {
+  content: '';
+  position: fixed;
+  width: 600px; height: 600px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(120,150,168,.08) 0%, transparent 70%);
+  top: -200px; right: -200px;
+  pointer-events: none;
+}
+
+.wrap {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 480px;
+  animation: fadeUp .6s ease both;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 頂部 Logo 區 */
+.logo-area {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.logo-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px; height: 72px;
+  background: var(--accent);
+  border-radius: 20px;
+  font-size: 36px;
+  margin-bottom: 18px;
+  box-shadow: 0 4px 0 rgba(60,90,110,.2), var(--shadow);
+}
+
+.logo-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: 30px;
+  color: var(--accent);
+  letter-spacing: .5px;
+  line-height: 1.15;
+}
+
+.logo-sub {
+  font-size: 13px;
+  color: var(--text-m);
+  margin-top: 6px;
+  font-weight: 500;
+  letter-spacing: .3px;
+}
+
+/* 卡片 */
+.card-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.entry-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 24px;
+  text-decoration: none;
+  color: var(--text);
+  box-shadow: var(--shadow);
+  transition: transform .18s, box-shadow .18s, border-color .18s;
+  position: relative;
+  overflow: hidden;
+}
+
+.entry-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  border-radius: 14px 0 0 14px;
+  transition: opacity .18s;
+  opacity: 0;
+}
+
+.entry-card.teacher::before { background: var(--accent); }
+.entry-card.student::before { background: var(--accent2); }
+
+.entry-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+  border-color: rgba(120,150,168,.4);
+}
+.entry-card:hover::before { opacity: 1; }
+.entry-card:active { transform: translateY(0); }
+
+.card-icon {
+  width: 52px; height: 52px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+.teacher .card-icon { background: rgba(120,150,168,.14); }
+.student .card-icon { background: rgba(138,170,142,.14); }
+
+.card-body { flex: 1; }
+
+.card-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.teacher .card-title { color: var(--accent); }
+.student .card-title { color: var(--accent2); }
+
+.card-desc {
+  font-size: 12px;
+  color: var(--text-m);
+  line-height: 1.6;
+}
+
+.card-arrow {
+  font-size: 18px;
+  color: var(--border);
+  transition: color .18s, transform .18s;
+  flex-shrink: 0;
+}
+.entry-card:hover .card-arrow {
+  color: var(--text-m);
+  transform: translateX(4px);
+}
+
+/* 底部 */
+.footer {
+  text-align: center;
+  margin-top: 32px;
+  font-size: 11px;
+  color: var(--text-m);
+  opacity: .6;
+  letter-spacing: .3px;
+}
+</style>
+</head>
 <body>
-    <h1>歡迎來到AIXplore-特教AI教學系統</h1>
-    <ul>
-        <li><a href="index1.html">前往教師後台</a></li>
-        <li><a href="index2.html">前往學生前台</a></li>
-    </ul>
+
+<div class="wrap">
+
+  <div class="logo-area">
+    <div class="logo-badge">🧲</div>
+    <div class="logo-title">AIXplore</div>
+    <div class="logo-sub">特教 AI 教學系統・3 上自然科學・磁鐵單元</div>
+  </div>
+
+  <div class="card-group">
+
+    <a href="index1.html" class="entry-card teacher">
+      <div class="card-icon">🖥️</div>
+      <div class="card-body">
+        <div class="card-title">教師後台</div>
+        <div class="card-desc">管理題目、查看學生成績<br>設計課後回饋問卷</div>
+      </div>
+      <div class="card-arrow">→</div>
+    </a>
+
+    <a href="index2.html" class="entry-card student">
+      <div class="card-icon">🎒</div>
+      <div class="card-body">
+        <div class="card-title">學生前台</div>
+        <div class="card-desc">磁鐵大冒險・三關挑戰<br>互動作答、即時 AI 回饋</div>
+      </div>
+      <div class="card-arrow">→</div>
+    </a>
+
+  </div>
+
+
+
+</div>
+
 </body>
 </html>
