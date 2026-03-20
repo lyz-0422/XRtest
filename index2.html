@@ -625,6 +625,30 @@ body::before {
   text-align: center; padding: 20px;
   font-size: 15px; font-weight: 600; color: var(--accent2);
 }
+
+/* 下拉選單登入 */
+.student-select {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-family: inherit; font-size: 15px; color: var(--text);
+  outline: none; cursor: pointer;
+  transition: border-color .2s, box-shadow .2s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%237b8087' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+.student-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(120,150,168,.18); }
+.login-divider {
+  display: flex; align-items: center; gap: 10px;
+  margin: 16px 0; color: var(--text-m); font-size: 12px;
+}
+.login-divider::before, .login-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
 </style>
 </head>
 <body>
@@ -639,8 +663,16 @@ body::before {
       <div class="hero-title">磁鐵大冒險</div>
       <div class="hero-sub">3上自然科學・單元4・AIXplore</div>
     </div>
+    <!-- 下拉選單選名字 -->
     <div class="fl">
-      <label>👤 你的姓名</label>
+      <label>👤 點選你的名字</label>
+      <select id="sel-student" class="student-select" onchange="onStudentSelect(this)">
+        <option value="">⏳ 載入學生名單中…</option>
+      </select>
+    </div>
+    <div class="login-divider">或手動輸入</div>
+    <div class="fl">
+      <label>👤 姓名</label>
       <input type="text" id="inp-name" placeholder="輸入姓名" maxlength="10" autocomplete="off">
     </div>
     <div class="fl">
@@ -701,6 +733,8 @@ let curUnit   = 1;
 let courseData = {};
 const unitDone = { 1:false, 2:false, 3:false };
 const answered = {};   // qid → { correct: true/false/null, pts: n }
+const wrongCount = {};  // qid → 答錯次數（用於第二次簡化回饋）
+const listenCount = {}; // qid → 聆聽朗讀次數
 
 // ── 評分設定 ──
 // 每題配分（可在後台調整，預設每題 10 分，簡答題送出即得 5 分）
@@ -746,32 +780,40 @@ const questionBank = {
   u1q0:{ type:'multi', opts:['① 鐵球','② 麻繩','③ 木棍','④ 鋁棒','⑤ 玻璃球','⑥ 鐵斧頭','⑦ 鐵鎚','⑧ 布製斗篷'],
     correct:[0,5,6],
     fb_c:'答對了！[停頓0.5秒]鐵球、鐵斧頭和鐵鎚都含有鐵，[停頓0.5秒]所以可以被磁鐵吸住。[停頓1.0秒][強調]義勇的裝備變強了，繼續加油！[/強調]',
-    fb_w:'再想想看！[停頓0.5秒]磁鐵只能吸住含有[強調]「鐵」[/強調]的東西喔。[停頓1.0秒]鋁棒雖然是金屬，但不含鐵，所以磁鐵吸不住它。' },
+    fb_w:'再想想看！[停頓0.5秒]磁鐵只能吸住含有[強調]「鐵」[/強調]的東西喔。[停頓1.0秒]鋁棒雖然是金屬，但不含鐵，所以磁鐵吸不住它。',
+    fb_w2:'提示：選有[強調]「鐵」[/強調]字的東西喔！鐵球、鐵斧頭、鐵鎚。' },
   u2q0:{ type:'single', opts:['會推開','不會（互相吸引）'], correct:1,
     fb_c:'答對！[停頓0.5秒]N極對S極是[強調]異極[/強調]，異極相吸，所以不會推開。',
-    fb_w:'再想想！[停頓0.5秒]N極對S極是異極，[強調]異極相吸[/強調]，不會推開喔。' },
+    fb_w:'再想想！[停頓0.5秒]N極對S極是異極，[強調]異極相吸[/強調]，不會推開喔。',
+    fb_w2:'提示：N極對S極是[強調]異極[/強調]，異極會相吸！' },
   u2q1:{ type:'single', opts:['會推開','不會（互相吸引）'], correct:0,
     fb_c:'答對！[停頓0.5秒]S極對S極是[強調]同極[/強調]，同極排斥，所以會推開！',
-    fb_w:'再想想！[停頓0.5秒]S極對S極是同極，[強調]同極排斥[/強調]，會互相推開喔。' },
+    fb_w:'再想想！[停頓0.5秒]S極對S極是同極，[強調]同極排斥[/強調]，會互相推開喔。',
+    fb_w2:'提示：S極對S極是[強調]同極[/強調]，同極會推開！' },
   u2q2:{ type:'single', opts:['磁鐵同極性靠近會互相排斥','磁鐵同極性靠近會互相吸引'], correct:0,
     fb_c:'太棒了！[停頓0.5秒]記住[強調]「同極排斥、異極相吸」[/強調]，這是磁鐵最重要的特性！',
-    fb_w:'再試試看！[停頓0.5秒]同極靠近時，兩個磁鐵會互相[強調]推開（排斥）[/強調]，不是吸引喔。' },
+    fb_w:'再試試看！[停頓0.5秒]同極靠近時，兩個磁鐵會互相[強調]推開（排斥）[/強調]，不是吸引喔。',
+    fb_w2:'提示：記住口訣——[強調]同極排斥、異極相吸[/強調]！' },
   u2q3:{ type:'single',
     opts:['① 冰箱磁鐵','② 木頭椅子','③ 玻璃杯','④ 塑膠袋'],
     correct:0,
     fb_c:'答對！[停頓0.5秒]冰箱磁鐵就是利用[強調]磁力[/強調]吸附在冰箱上的喔！',
-    fb_w:'再想想！[停頓0.5秒]木頭、玻璃、塑膠都不含鐵，[強調]磁力[/強調]對它們沒有作用。' },
+    fb_w:'再想想！[停頓0.5秒]木頭、玻璃、塑膠都不含鐵，[強調]磁力[/強調]對它們沒有作用。',
+    fb_w2:'提示：哪一個是會吸在冰箱上的東西？' },
   u3q0:{ type:'single',
     opts:['① 同極排斥','② 異極相吸','③ 磁鐵會生鏽','④ 磁鐵怕水'],
     correct:1,
     fb_c:'答對！[停頓0.5秒]釣魚遊戲就是用[強調]異極相吸[/強調]的原理把圖卡吸起來！',
-    fb_w:'再想想！[停頓0.5秒]釣竿和圖卡的磁鐵是不同磁極，[強調]異極[/強調]才會相吸喔！' },
+    fb_w:'再想想！[停頓0.5秒]釣竿和圖卡的磁鐵是不同磁極，[強調]異極[/強調]才會相吸喔！',
+    fb_w2:'提示：釣魚要用[強調]不同磁極[/強調]才能吸住，那就是？' },
   u3q1:{ type:'single', opts:['S 極','N 極'], correct:1,
     fb_c:'釣到了！[停頓0.5秒]S極朝上，要用[強調]N極[/強調]才能吸住，因為異極相吸！',
-    fb_w:'再試試！[停頓0.5秒]S和S是同極，同極排斥吸不住。[停頓0.5秒]要用[強調]N極[/強調]才能吸住喔。' },
+    fb_w:'再試試！[停頓0.5秒]S和S是同極，同極排斥吸不住。[停頓0.5秒]要用[強調]N極[/強調]才能吸住喔。',
+    fb_w2:'提示：S極要搭配[強調]N極[/強調]才能吸住！' },
   u3q2:{ type:'single', opts:['S 極','N 極'], correct:0,
     fb_c:'太棒了！[停頓0.5秒]N極朝上，要用[強調]S極[/強調]才能吸住，[強調]異極相吸！你完全掌握了！[/強調]',
-    fb_w:'再想想！[停頓0.5秒]N極朝上，要用[強調]S極[/強調]才能吸住，記得異極才能相吸喔。' }
+    fb_w:'再想想！[停頓0.5秒]N極朝上，要用[強調]S極[/強調]才能吸住，記得異極才能相吸喔。',
+    fb_w2:'提示：N極要搭配[強調]S極[/強調]才能吸住！' }
 };
 
 // ── 計算滿分 ──
@@ -1019,7 +1061,7 @@ function goUnit(n) {
             <span class="q-pts">${pts} 分</span>
           </div>
           <div class="q-text">${toHtml(q.text)}</div>
-          <button class="btn-speak" style="margin-bottom:14px;font-size:12px;" onclick="speakBtn(this,'${escQ(q.text)}')">🔊 朗讀題目</button>
+          <button class="btn-speak" style="margin-bottom:14px;font-size:12px;" onclick="speakBtn(this,'${escQ(q.text)}','${qid}')">🔊 朗讀題目</button>
           ${body}
           <div class="fb-box" id="fb-${qid}"></div>
         </div>`;
@@ -1225,9 +1267,15 @@ function speak(text,btn) {
   const go=()=>runSegs(buildSegs(text),0,btn);
   window.speechSynthesis.getVoices().length===0?(window.speechSynthesis.onvoiceschanged=go):go();
 }
-function speakBtn(btn,text) {
+function speakBtn(btn, text, qid) {
   if(btn.disabled){window.speechSynthesis.cancel();btn.textContent=btn._orig;btn.disabled=false;return;}
-  speak(text,btn);
+  // 記錄聆聽次數（題目朗讀）
+  if (qid) {
+    listenCount[qid] = (listenCount[qid]||0) + 1;
+    // 每聆聽一次就存一次到 Firebase（非同步，不阻塞）
+    saveListenEvent(qid, listenCount[qid]);
+  }
+  speak(text, btn);
 }
 
 // ── 作答互動 ──
@@ -1238,7 +1286,7 @@ function pick(el,qid) {
   el.classList.add('sel');
 }
 
-function showFb(qid, cls, icon, text, pts) {
+function showFb(qid, cls, icon, text, pts, autoSpeak=true) {
   const fb = document.getElementById('fb-'+qid);
   if (!fb) return;
 
@@ -1261,9 +1309,9 @@ function showFb(qid, cls, icon, text, pts) {
   const card = document.getElementById('qc-'+qid);
   if (card) card.classList.add(cls==='correct'?'ac':cls==='wrong'?'aw':'ao');
 
-  // 更新單元分數列
   updateUnitScoreDisplay();
-  speak(text);
+  // autoSpeak=false 表示答對由外部在 burst 後控制語音，避免重複播放
+  if (autoSpeak) speak(text);
   setTimeout(() => fb.scrollIntoView({behavior:'smooth',block:'nearest'}), 200);
 }
 
@@ -1303,11 +1351,14 @@ function subMulti(qid) {
   const pts = isC ? PTS_CORRECT : PTS_WRONG;
   lockOpts(qid,bank);
   if (!isC) document.querySelectorAll('#o-'+qid+' .opt.sel').forEach(o=>{ if(!o.classList.contains('correct')) o.classList.add('wrong'); });
-  showFb(qid, isC?'correct':'wrong', isC?'🎉':'💭', isC?bank.fb_c:bank.fb_w, pts);
+  if (!isC) wrongCount[qid] = (wrongCount[qid]||0) + 1;
+  const fbTextM = isC ? bank.fb_c
+    : (wrongCount[qid]>=2 && bank.fb_w2) ? bank.fb_w2 : bank.fb_w;
+  showFb(qid, isC?'correct':'wrong', isC?'🎉':'💭', fbTextM, pts, !isC);
   answered[qid]={correct:isC, pts};
   totalScore += pts; updateScoreBadge();
   saveAns(qid, sel.join(','), isC, pts);
-  if(isC) burst();
+  if(isC) { burst(); setTimeout(()=>speak(fbTextM), 100); }
   checkDone();
 }
 
@@ -1318,12 +1369,18 @@ function subSingle(qid) {
   const i=parseInt(s.dataset.i); const isC=i===bank.correct;
   const pts = isC ? PTS_CORRECT : PTS_WRONG;
   lockOpts(qid,bank);
-  if(!isC) s.classList.add('wrong');
-  showFb(qid, isC?'correct':'wrong', isC?'🎉':'💭', isC?bank.fb_c:bank.fb_w, pts);
+  if(!isC) {
+    s.classList.add('wrong');
+    wrongCount[qid] = (wrongCount[qid]||0) + 1;
+  }
+  // 第二次（含）以上答錯，回饋語自動變簡單
+  const fbText = isC ? bank.fb_c
+    : (wrongCount[qid]>=2 && bank.fb_w2) ? bank.fb_w2 : bank.fb_w;
+  showFb(qid, isC?'correct':'wrong', isC?'🎉':'💭', fbText, pts, !isC);
   answered[qid]={correct:isC, pts};
   totalScore += pts; updateScoreBadge();
   saveAns(qid, bank.opts[i], isC, pts);
-  if(isC) burst();
+  if(isC) { burst(); setTimeout(()=>speak(fbText), 100); }
   checkDone();
 }
 
@@ -1574,6 +1631,63 @@ async function submitFeedback() {
   if (area) area.innerHTML = `<div class="feedback-form-wrap">
     <div class="fb-sent">💌 謝謝你的回饋！老師收到了 😊</div>
   </div>`;
+}
+
+
+// ── 下拉選單：從 Firebase 載入學生名單 ──
+async function loadStudentDropdown() {
+  const sel = document.getElementById('sel-student');
+  if (!sel) return;
+  if (!db) {
+    sel.innerHTML = '<option value="">（離線模式，請手動輸入）</option>';
+    return;
+  }
+  try {
+    const snap = await db.collection('Users').get();
+    if (snap.empty) {
+      sel.innerHTML = '<option value="">（找不到學生名單）</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">── 點選你的名字 ──</option>';
+    snap.forEach(doc => {
+      const d = doc.data();
+      const name = d.name || d.studentName || '（未命名）';
+      const sid  = d.studentId || doc.id;
+      const opt  = document.createElement('option');
+      opt.value = JSON.stringify({ name, sid });
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+  } catch(e) {
+    sel.innerHTML = '<option value="">（名單載入失敗，請手動輸入）</option>';
+  }
+}
+
+function onStudentSelect(sel) {
+  if (!sel.value) return;
+  try {
+    const { name, sid } = JSON.parse(sel.value);
+    document.getElementById('inp-name').value = name;
+    document.getElementById('inp-sid').value  = sid;
+  } catch(e) {}
+}
+
+// 頁面載入時讀取學生名單
+window.addEventListener('DOMContentLoaded', loadStudentDropdown);
+
+// ── 記錄聆聽次數到 Firebase ──
+async function saveListenEvent(qid, count) {
+  if (!db) return;
+  try {
+    await db.collection('ListenEvents').add({
+      studentId:   student.sid,
+      studentName: student.name,
+      unit:        'qt' + curUnit,
+      question:    qid,
+      listenCount: count,
+      timestamp:   firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch(e) { /* 靜默失敗 */ }
 }
 
 // ── 登出 / 回到登入頁 ──

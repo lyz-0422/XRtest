@@ -1607,6 +1607,19 @@ try {
           </div>
         </div>
 
+        <!-- 聆聽次數統計 -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-title">
+            <span><span class="card-title-icon">🔊</span>學習歷程深度 — 聆聽朗讀次數</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+            學生點擊「🔊 朗讀題目」的次數，次數越多代表該學生對該題需要更多輔助。
+          </div>
+          <div id="dash-listen-area">
+            <div class="dash-loading"><span class="dash-spinner"></span>讀取中…</div>
+          </div>
+        </div>
+
         <!-- 分數記錄總表 -->
         <div class="card" style="margin-bottom:20px;">
           <div class="card-title" style="justify-content:space-between;">
@@ -3375,10 +3388,11 @@ try {
     if (!_fbdb) { toast('Firebase 未連線'); return; }
 
     // 同時讀取三個集合
-    const [usersSnap, scoresSnap, activitiesSnap] = await Promise.all([
+    const [usersSnap, scoresSnap, activitiesSnap, listenSnap] = await Promise.all([
       _fbdb.collection('Users').get().catch(()=>null),
       _fbdb.collection('Scores').get().catch(()=>null),
       _fbdb.collection('Activities').orderBy('timestamp','desc').limit(10).get().catch(()=>null),
+      _fbdb.collection('ListenEvents').get().catch(()=>null),
     ]);
     // Answers 集合不再讀取（簡答題已改為選擇題，無複審需求）
 
@@ -3464,6 +3478,33 @@ try {
       </div>`;
     });
     document.getElementById('dash-unit-progress').innerHTML = unitHtml || '<div class="dash-loading">尚無完成記錄</div>';
+
+    // ── 聆聽次數統計（學習歷程深度指標）──
+    if (listenSnap && !listenSnap.empty) {
+      const listenMap = {};  // { sid → { name, total, byQ: { qid → count } } }
+      listenSnap.forEach(doc => {
+        const d = doc.data();
+        if (!d.studentId) return;
+        const sid = String(d.studentId);
+        if (!listenMap[sid]) listenMap[sid] = { name: d.studentName||sid, total:0, byQ:{} };
+        listenMap[sid].total += (d.listenCount||1);
+        listenMap[sid].byQ[d.question] = (listenMap[sid].byQ[d.question]||0) + (d.listenCount||1);
+      });
+      // 找出聆聽最多次的題目
+      const topListeners = Object.entries(listenMap)
+        .sort((a,b) => b[1].total - a[1].total).slice(0,5);
+      if (topListeners.length > 0) {
+        const listenHtml = topListeners.map(([sid,info]) =>
+          `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(180,185,190,.2);">
+            <span style="font-size:13px;font-weight:600;">${info.name}</span>
+            <span style="font-size:12px;color:var(--text-muted);">共聆聽 <strong style="color:var(--accent4);">${info.total}</strong> 次</span>
+          </div>`
+        ).join('');
+        // 插入到活動紀錄旁邊（若元素存在）
+        const listenEl = document.getElementById('dash-listen-area');
+        if (listenEl) listenEl.innerHTML = listenHtml;
+      }
+    }
 
     // ── 活動時間軸 ──
     const typeLabel = { login:'登入', unit_complete:'完成單元', all_complete:'🏆 全關破' };
