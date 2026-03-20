@@ -735,6 +735,7 @@ const unitDone = { 1:false, 2:false, 3:false };
 const answered = {};   // qid → { correct: true/false/null, pts: n }
 const wrongCount = {};  // qid → 答錯次數（用於第二次簡化回饋）
 const listenCount = {}; // qid → 聆聽朗讀次數
+let sessionId = Date.now().toString(36); // 每次作答的唯一 session ID
 
 // ── 評分設定 ──
 // 每題配分（可在後台調整，預設每題 10 分，簡答題送出即得 5 分）
@@ -1494,6 +1495,8 @@ function restartQuiz() {
   curUnit = 1;
   Object.keys(unitDone).forEach(k => unitDone[k] = false);
   Object.keys(answered).forEach(k => delete answered[k]);
+  Object.keys(listenCount).forEach(k => delete listenCount[k]);
+  sessionId = Date.now().toString(36); // 新的作答回合
   totalScore = 0;
   calcMaxScore();
   updateScoreBadge();
@@ -1685,6 +1688,7 @@ async function saveListenEvent(qid, count) {
       unit:        'qt' + curUnit,
       question:    qid,
       listenCount: count,
+      sessionId:   sessionId,   // 同一次作答共用同一個 session
       timestamp:   firebase.firestore.FieldValue.serverTimestamp()
     });
   } catch(e) { /* 靜默失敗 */ }
@@ -1697,6 +1701,8 @@ function backToLogin() {
   courseData = {};
   Object.keys(unitDone).forEach(k => unitDone[k] = false);
   Object.keys(answered).forEach(k => delete answered[k]);
+  Object.keys(listenCount).forEach(k => delete listenCount[k]);
+  sessionId = Date.now().toString(36);
   totalScore = 0; maxScore = 0;
   window.speechSynthesis.cancel();
   document.getElementById('inp-name').value = '';
