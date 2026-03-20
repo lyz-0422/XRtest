@@ -1,0 +1,3602 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIXplore 特教系統 — 教師後台</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<!-- Firebase compat SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+if(typeof firebase === 'undefined'){ window.firebase={initializeApp:()=>{},firestore:()=>null}; }
+let _fbdb = null;
+try {
+  if(!firebase.apps || !firebase.apps.length){
+    firebase.initializeApp({
+      apiKey: "AIzaSyBvTrA2GosSz7qumSilK6rw5QuoAZRjx64",
+      authDomain: "xrtest-1d213.firebaseapp.com",
+      projectId: "xrtest-1d213",
+      storageBucket: "xrtest-1d213.firebasestorage.app",
+      messagingSenderId: "65645917782",
+      appId: "1:65645917782:web:a23de60c3ae165e2222df7"
+    });
+  }
+  _fbdb = firebase.firestore();
+} catch(e){ console.warn('Firebase init error:', e.message); }
+
+
+  // 讀取 Users collection 並渲染到學生表格
+  async function loadStudents() {
+    const tbody = document.getElementById('students-tbody');
+    const countEl = document.getElementById('fb-student-count');
+    const dashCount = document.getElementById('dash-student-count');
+    const dashSub   = document.getElementById('dash-student-sub');
+    if (!tbody) return;
+
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--text-muted);">從 Firebase 讀取中…</td></tr>`;
+
+    try {
+      const snapshot = await _fbdb.collection('Users').get();
+
+      // ── 更新儀表板學生數 ──
+      const total = snapshot.size;
+      if (dashCount) dashCount.textContent = total;
+      if (dashSub)   dashSub.innerHTML = `Firebase Users 集合共 <strong style="color:var(--text);">${total}</strong> 筆`;
+
+      if (snapshot.empty) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--text-muted);">Firebase Users 集合目前沒有資料</td></tr>`;
+        return;
+      }
+
+      const students = [];
+      snapshot.forEach(doc => students.push({ id: doc.id, ...doc.data() }));
+
+      // 更新 Firebase 連線頁的學生數
+      if (countEl) countEl.textContent = total;
+
+      // 同時讀取 Scores 集合，做出作答進度
+      // 用 OR 邏輯：同一單元只要有任一筆 completed:true 就算完成
+      // studentId 統一轉成字串比對，避免數字/字串型別不一致
+      let scoresMap = {};
+      try {
+        const sSnap = await _fbdb.collection('Scores').get();
+        sSnap.forEach(doc => {
+          const d = doc.data();
+          if (!d.studentId) return;
+        const sid = String(d.studentId);
+          if (!scoresMap[sid]) scoresMap[sid] = {};
+          // completed 欄位若不存在（舊資料），但有 score 記錄也算完成
+          const isCompleted = d.completed === true || (d.score !== undefined && d.score >= 0);
+          if (isCompleted) scoresMap[sid][d.unit] = true;
+          else if (!scoresMap[sid][d.unit]) scoresMap[sid][d.unit] = false;
+        });
+      } catch(e) {}
+
+      tbody.innerHTML = students.map(s => {
+        const name   = s.name   || s.studentName || '（未命名）';
+        const sid    = String(s.studentId || s.id);
+        const school = s.school || '—';
+        const grade  = s.grade  || '—';
+        const role   = s.role   || '—';
+        const sc = scoresMap[sid] || {};
+        const dot = u => sc[u]
+          ? '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--accent2);margin-right:3px;" title="已完成"></span>'
+          : '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--border);margin-right:3px;" title="未完成"></span>';
+        const prog = `${dot('qt1')}${dot('qt2')}${dot('qt3')}`;
+        const done = ['qt1','qt2','qt3'].filter(u=>sc[u]).length;
+        return `<tr>
+          <td>${name}</td>
+          <td>${sid}</td>
+          <td>${school}</td>
+          <td>${grade}</td>
+          <td>${role}</td>
+          <td><span class="activity-dot dot-green"></span>已建立</td>
+          <td>${prog} <span style="font-size:11px;color:var(--text-muted);">${done}/3 關</span></td>
+        </tr>`;
+      }).join('');
+
+    } catch (e) {
+      // 更新儀表板顯示錯誤狀態
+      if (dashCount) dashCount.textContent = '⚠';
+      if (dashSub)   dashSub.textContent = 'Firebase 讀取失敗，請確認權限';
+
+      tbody.innerHTML = `<tr><td colspan="7" style="padding:16px; color:var(--accent3); font-size:13px; line-height:1.6;">
+        ⚠ 讀取 Firebase 失敗：${e.message}<br>
+        <span style="color:var(--text-muted); font-size:12px;">請確認 Firestore 安全規則允許讀取，或聯絡明右開放權限。</span>
+      </td></tr>`;
+    }
+  }
+
+  // 頁面載入後立即讀取，讓儀表板學生數正確
+  window._loadStudentsFromFirebase = loadStudents;
+  document.addEventListener('DOMContentLoaded', () => {
+    loadStudents();
+  });
+
+// Firebase module end
+</script>
+<style>
+  :root {
+    --bg: #edeef0;
+    --surface: #f5f5f4;
+    --surface2: #ebebea;
+    --border: #d8d9db;
+    --accent: #7896a8;
+    --accent2: #8aaa8e;
+    --accent3: #b08a84;
+    --accent4: #9096a8;
+    --text: #3a3d42;
+    --text-muted: #7b8087;
+    --text-dim: #adb0b5;
+    --radius: 8px;
+    --shadow: 0 2px 12px rgba(100,110,120,0.10);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Noto Sans TC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ─── LOGIN SCREEN ─── */
+  #login-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    position: relative;
+    overflow: hidden;
+  }
+
+  #login-screen::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(120,150,168,0.07) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(120,150,168,0.07) 40px);
+    pointer-events: none;
+  }
+
+  .login-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 52px 48px;
+    width: 420px;
+    box-shadow: var(--shadow);
+    position: relative;
+    z-index: 1;
+    animation: fadeUp 0.6s ease both;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .login-logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 36px;
+  }
+
+  .logo-icon {
+    width: 44px; height: 44px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+  }
+
+  .logo-text { 
+    font-size: 22px; font-weight: 700; letter-spacing: -0.5px;
+    color: var(--accent);
+  }
+
+  .login-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  .form-group { margin-bottom: 20px; }
+  .form-group label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px; font-weight: 500; }
+  .form-group input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .form-group input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(120,150,168,0.15);
+  }
+
+  .btn-primary {
+    width: 100%;
+    background: var(--accent);
+    color: #f5f5f4;
+    border: none;
+    border-radius: var(--radius);
+    padding: 13px;
+    font-size: 15px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    margin-top: 8px;
+    letter-spacing: 0.3px;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-primary:active { transform: scale(0.98); }
+
+  .demo-hint {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .demo-hint span { color: var(--accent); cursor: pointer; }
+  .demo-hint span:hover { text-decoration: underline; }
+
+  /* ─── MAIN APP ─── */
+  #app { display: none; min-height: 100vh; flex-direction: column; }
+
+  /* Sidebar + content layout */
+  .layout { display: flex; flex: 1; }
+
+  /* Topbar */
+  .topbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 16px; }
+  .topbar-logo { display: flex; align-items: center; gap: 10px; }
+  .topbar-logo .logo-icon { width: 32px; height: 32px; font-size: 16px; border-radius: 8px; }
+  .topbar-logo .logo-text { font-size: 17px; }
+  .topbar-badge {
+    background: rgba(120,150,168,0.12);
+    color: var(--accent);
+    border: 1px solid rgba(120,150,168,0.25);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 11px;
+    letter-spacing: 0.2px;
+  }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .user-chip {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+  .user-avatar {
+    width: 24px; height: 24px;
+    background: var(--accent2);
+    border-radius: 50%;
+    font-size: 11px;
+    display: flex; align-items: center; justify-content: center; font-weight: 500;
+    color: #f5f5f4;
+  }
+  .btn-logout {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-logout:hover { border-color: var(--accent3); color: var(--accent3); }
+
+  /* Sidebar */
+  .sidebar {
+    width: 220px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .nav-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    padding: 12px 10px 6px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid transparent;
+  }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active {
+    background: rgba(120,150,168,0.12);
+    color: var(--accent);
+    border-color: rgba(120,150,168,0.22);
+  }
+  .nav-item .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+  /* Main content */
+  .main-content {
+    flex: 1;
+    padding: 32px;
+    overflow-y: auto;
+    max-width: 1100px;
+  }
+
+  .page-header { margin-bottom: 28px; }
+  .page-title { font-size: 24px; font-weight: 900; letter-spacing: -0.5px; }
+  .page-desc { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: 14px; font-weight: 700;
+    color: var(--text);
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 18px;
+  }
+  .card-title-icon { font-size: 18px; }
+
+  /* Grid */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+
+  /* Stat card */
+  .stat-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: attr(data-icon);
+    position: absolute;
+    right: 16px; top: 12px;
+    font-size: 32px;
+    opacity: 0.15;
+  }
+  .stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+  .stat-value { font-size: 32px; font-weight: 700; }
+  .stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .stat-up { color: var(--accent2); }
+  .stat-tag {
+    display: inline-block;
+    background: rgba(120,150,168,0.12);
+    color: var(--accent);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    margin-top: 8px;
+  }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface2);
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(120,150,168,0.06);
+  }
+  .upload-icon { font-size: 48px; margin-bottom: 12px; }
+  .upload-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .upload-sub { font-size: 13px; color: var(--text-muted); }
+  .upload-formats {
+    display: flex; gap: 8px; justify-content: center; margin-top: 16px; flex-wrap: wrap;
+  }
+  .format-tag {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    color: var(--text-muted);
+  }
+
+  /* Model list */
+  .model-list { display: flex; flex-direction: column; gap: 10px; }
+  .model-item {
+    display: flex; align-items: center;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    gap: 14px;
+    transition: border-color 0.2s;
+  }
+  .model-item:hover { border-color: rgba(120,150,168,0.4); }
+  .model-thumb {
+    width: 48px; height: 48px;
+    background: rgba(120,150,168,0.14);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    flex-shrink: 0;
+  }
+  .model-info { flex: 1; }
+  .model-name { font-size: 14px; font-weight: 700; }
+  .model-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .model-status {
+    font-size: 11px;
+    border-radius: 4px;
+    padding: 3px 8px;
+  }
+  .status-active { background: rgba(138,170,142,0.15); color: #5a8060; }
+  .status-draft  { background: rgba(176,138,132,0.15); color: #8a5e58; }
+  .model-actions { display: flex; gap: 8px; }
+  .btn-small {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-small:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-danger:hover { border-color: var(--accent3); color: var(--accent3); }
+
+  /* Editor */
+  .editor-area {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .editor-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+  .toolbar-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .toolbar-btn:hover { background: var(--surface2); color: var(--text); }
+  .toolbar-divider { width: 1px; height: 20px; background: var(--border); }
+  .editor-textarea {
+    width: 100%;
+    min-height: 200px;
+    background: transparent;
+    border: none;
+    padding: 18px;
+    color: var(--text);
+    font-family: 'Noto Sans TC', sans-serif;
+    font-size: 14px;
+    line-height: 1.7;
+    resize: vertical;
+    outline: none;
+  }
+
+  /* Quiz table */
+  .quiz-table { width: 100%; border-collapse: collapse; }
+  .quiz-table th {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .quiz-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(180,185,190,0.4);
+    font-size: 13px;
+    vertical-align: top;
+  }
+  .quiz-table tr:last-child td { border-bottom: none; }
+  .quiz-table tr:hover td { background: rgba(120,150,168,0.04); }
+  .quiz-type-tag {
+    background: rgba(144,150,168,0.15);
+    color: var(--accent4);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .quiz-actions { display: flex; gap: 6px; }
+
+  /* Progress chart */
+  .progress-bars { display: flex; flex-direction: column; gap: 12px; }
+  .progress-row { display: flex; align-items: center; gap: 12px; }
+  .progress-label { width: 80px; font-size: 13px; color: var(--text-muted); flex-shrink: 0; }
+  .progress-track {
+    flex: 1; height: 8px;
+    background: var(--surface2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 1s ease;
+  }
+  .progress-pct { width: 36px; font-size: 12px; text-align: right; color: var(--text-muted); }
+
+  /* Student table */
+  .student-table { width: 100%; border-collapse: collapse; }
+  .student-table th {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left; font-size: 12px;
+    color: var(--text-muted); font-weight: 600;
+  }
+  .student-table td {
+    padding: 11px 14px;
+    border-bottom: 1px solid rgba(180,185,190,0.4);
+    font-size: 13px;
+  }
+  .student-table tr:hover td { background: rgba(120,150,168,0.04); }
+  .activity-dot {
+    display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+  }
+  .dot-green { background: #7aaa82; }
+  .dot-yellow { background: #b8a86a; }
+  .dot-red { background: #b08a84; }
+  .score-pill {
+    display: inline-block;
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .score-high { background: rgba(138,170,142,0.18); color: #4e7a55; }
+  .score-mid  { background: rgba(190,175,120,0.18); color: #8a7840; }
+  .score-low  { background: rgba(176,138,132,0.18); color: #8a5e58; }
+
+  /* Mini bar */
+  .mini-bar {
+    display: flex; gap: 2px; align-items: flex-end; height: 24px;
+  }
+  .mini-bar-col {
+    width: 6px; border-radius: 2px;
+    background: var(--accent);
+    opacity: 0.55;
+  }
+
+  /* Timeline */
+  .timeline { display: flex; flex-direction: column; gap: 0; }
+  .timeline-item {
+    display: flex; gap: 16px;
+    position: relative;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: 16px; top: 32px;
+    width: 1px; bottom: 0;
+    background: var(--border);
+  }
+  .timeline-item:last-child::before { display: none; }
+  .timeline-dot {
+    width: 32px; height: 32px; flex-shrink: 0;
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    margin-top: 2px;
+  }
+  .timeline-body { padding-bottom: 20px; }
+  .timeline-title { font-size: 13px; font-weight: 600; }
+  .timeline-meta  { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  /* Save banner */
+  .save-bar {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--surface2);
+    border: 1px solid var(--accent2);
+    border-radius: var(--radius);
+    padding: 12px 20px;
+    display: flex; align-items: center; gap: 12px;
+    font-size: 14px;
+    box-shadow: var(--shadow);
+    display: none;
+    z-index: 200;
+    animation: slideUp 0.3s ease;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to   { transform: translateY(0); opacity: 1; }
+  }
+  .btn-save {
+    background: var(--accent2);
+    color: #f5f5f4;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .btn-discard {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .btn-discard:hover { color: var(--text); }
+
+  /* ─── 題庫管理 q-item ─── */
+  .qlist { display: flex; flex-direction: column; gap: 16px; }
+
+  .q-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .q-item-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 2px;
+  }
+  .q-item-num {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(120,150,168,0.12);
+    border-radius: 5px;
+    padding: 2px 10px;
+    flex-shrink: 0;
+  }
+  .q-item-header select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--text-muted);
+    cursor: pointer;
+    outline: none;
+  }
+
+  .q-item-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  .q-item textarea {
+    width: 100%;
+    min-height: 64px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    resize: vertical;
+    outline: none;
+    line-height: 1.6;
+    transition: border-color 0.2s;
+  }
+  .q-item textarea:focus { border-color: var(--accent); }
+
+  .opts-editor { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+
+  .opt-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .opt-row input[type="text"] {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .opt-row input[type="text"]:focus { border-color: var(--accent); }
+
+  .opt-correct-btn {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 6px;
+    width: 30px; height: 30px;
+    font-size: 13px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .opt-correct-btn.active {
+    background: rgba(138,170,142,0.18);
+    border-color: #7aaa82;
+    color: #4e7a55;
+    font-weight: 700;
+  }
+  .opt-del-btn {
+    background: none;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    border-radius: 6px;
+    width: 28px; height: 28px;
+    font-size: 13px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .opt-del-btn:hover { border-color: var(--accent3); color: var(--accent3); }
+
+  .btn-add-opt {
+    background: none;
+    border: 1px dashed rgba(120,150,168,0.35);
+    color: var(--accent);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+    align-self: flex-start;
+  }
+  .btn-add-opt:hover { background: rgba(120,150,168,0.08); }
+
+  .fb-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .fb-pair textarea { min-height: 72px; }
+
+  .q-item-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 4px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .tab {
+    padding: 10px 18px;
+    font-size: 13px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Add btn */
+  .btn-add {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(120,150,168,0.08);
+    border: 1px dashed rgba(120,150,168,0.35);
+    color: var(--accent);
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+    justify-content: center;
+  }
+  .btn-add:hover { background: rgba(120,150,168,0.14); }
+
+  /* Google form embed hint */
+  .gform-hint {
+    background: rgba(138,170,142,0.08);
+    border: 1px solid rgba(138,170,142,0.28);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    display: flex; align-items: flex-start; gap: 12px;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+  }
+  .gform-hint-icon { font-size: 20px; flex-shrink: 0; }
+  .gform-hint a { color: var(--accent2); text-decoration: none; }
+  .gform-hint a:hover { text-decoration: underline; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 80px; right: 24px;
+    background: var(--accent2);
+    color: #f5f5f4;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: var(--shadow);
+    z-index: 300;
+    display: none;
+    animation: slideUp 0.3s ease;
+  }
+
+  /* Voice management page */
+  .voice-banner {
+    display: flex; align-items: flex-start; gap: 16px;
+    background: rgba(120,150,168,0.08);
+    border: 1px solid rgba(120,150,168,0.22);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+  .voice-banner-icon { font-size: 28px; flex-shrink: 0; }
+  .voice-mode-badge {
+    margin-left: auto; flex-shrink: 0;
+    background: rgba(120,150,168,0.15);
+    color: var(--accent);
+    border: 1px solid rgba(120,150,168,0.3);
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    align-self: center;
+  }
+  .voice-guide {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    margin-bottom: 4px;
+  }
+  .voice-guide-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+  .voice-guide-body { display: flex; flex-direction: column; gap: 6px; }
+  .voice-guide-item { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+  .voice-track-list { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  .voice-track-item {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    transition: border-color 0.15s;
+  }
+  .voice-track-item:hover { border-color: rgba(120,150,168,0.35); }
+  .voice-track-item.has-audio { border-color: rgba(138,170,142,0.4); background: rgba(138,170,142,0.05); }
+  .voice-track-info { flex: 1; }
+  .voice-track-name { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+  .voice-track-script { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+  .voice-track-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .voice-status {
+    font-size: 11px; border-radius: 4px; padding: 2px 8px; font-weight: 600;
+  }
+  .voice-status.tts { background: rgba(144,150,168,0.15); color: var(--accent4); }
+  .voice-status.recorded { background: rgba(138,170,142,0.18); color: #4e7a55; }
+  .upload-label {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .upload-label:hover { border-color: var(--accent2); color: var(--accent2); }
+  .tts-preview-btn { color: var(--accent); border-color: rgba(120,150,168,0.3); }
+  .tts-preview-btn:hover { background: rgba(120,150,168,0.1); }
+  .tts-preview-btn.playing { background: rgba(120,150,168,0.15); color: var(--accent); }
+
+
+  /* ─── RESPONSIVE ─── */
+  @media (max-width: 768px) {
+    .sidebar { width: 60px; }
+    .nav-item span { display: none; }
+    .nav-section-label { display: none; }
+    .main-content { padding: 20px 16px; }
+    .grid-3 { grid-template-columns: 1fr; }
+    .grid-2 { grid-template-columns: 1fr; }
+    .options-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+
+  /* ─── EDITOR TOOLBAR ─── */
+
+
+  .pause-legend { font-size: 11px; color: var(--text-dim); padding: 6px 14px 8px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .pause-legend code { background: rgba(120,150,168,0.12); color: var(--accent); border-radius: 3px; padding: 1px 5px; font-size: 11px; }
+  .toolbar-btn.tts-btn { color: var(--accent2); border-color: rgba(138,170,142,0.35); }
+  .toolbar-btn.tts-btn:hover { background: rgba(138,170,142,0.1); }
+  .toolbar-btn.tts-btn.speaking { background: rgba(138,170,142,0.18); color: #4e7a55; border-color: #7aaa82; }
+  .toolbar-btn.pause-btn { color: var(--accent4); border-color: rgba(144,150,168,0.3); }
+  .toolbar-btn.pause-btn:hover { background: rgba(144,150,168,0.1); }
+
+  .dialog-log { display: flex; flex-direction: column; gap: 10px; max-height: 380px; overflow-y: auto; padding: 4px 0; }
+  .dialog-bubble { display: flex; gap: 10px; align-items: flex-start; }
+  .dialog-bubble.ai { flex-direction: row; }
+  .dialog-bubble.student { flex-direction: row-reverse; }
+  .bubble-avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; margin-top: 2px; }
+  .bubble-avatar.ai-av  { background: rgba(120,150,168,0.15); }
+  .bubble-avatar.stu-av { background: rgba(138,170,142,0.15); }
+  .bubble-text { max-width: 75%; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
+  .dialog-bubble.ai .bubble-text     { background: var(--surface2); border: 1px solid var(--border); border-top-left-radius: 2px; }
+  .dialog-bubble.student .bubble-text { background: rgba(120,150,168,0.12); border: 1px solid rgba(120,150,168,0.2); border-top-right-radius: 2px; }
+  .bubble-time { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .dialog-insight { margin-top: 16px; padding: 14px 16px; background: rgba(176,138,132,0.08); border: 1px solid rgba(176,138,132,0.25); border-radius: 8px; font-size: 13px; line-height: 1.6; display: none; }
+  .dialog-insight.show { display: block; }
+  .dialog-insight-title { font-weight: 600; color: #8a5e58; margin-bottom: 6px; }
+
+  /* View toggle */
+  .btn-view-toggle {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-view-toggle.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #f5f5f4;
+  }
+
+  /* Student quiz UI */
+  .quiz-student-header { margin-bottom: 22px; }
+  .unit-label {
+    display: inline-block;
+    background: rgba(120,150,168,0.12);
+    color: var(--accent);
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+  .quiz-student-title { font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .quiz-student-desc { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+
+  .question-block {
+    border-top: 1px solid var(--border);
+    padding-top: 18px;
+  }
+  .q-label { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .q-type-pill {
+    background: rgba(144,150,168,0.15);
+    color: var(--accent4);
+    border-radius: 4px;
+    padding: 1px 8px;
+    font-size: 11px;
+  }
+  .q-text { font-size: 14px; color: var(--text); line-height: 1.7; margin-bottom: 14px; }
+
+  .options-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .options-row {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .options-col {
+    display: flex; flex-direction: column; gap: 8px;
+    margin-bottom: 14px;
+  }
+  .opt-item {
+    background: var(--surface2);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+    text-align: center;
+  }
+  .opt-item:hover { border-color: var(--accent); color: var(--accent); }
+  .opt-item.selected {
+    background: rgba(120,150,168,0.12);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .opt-item.correct {
+    background: rgba(138,170,142,0.15);
+    border-color: #7aaa82;
+    color: #4e7a55;
+  }
+  .opt-item.wrong {
+    background: rgba(176,138,132,0.15);
+    border-color: #b08a84;
+    color: #8a5e58;
+  }
+
+  .btn-submit {
+    background: var(--accent);
+    color: #f5f5f4;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 22px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn-submit:hover { opacity: 0.85; }
+
+  .q-feedback {
+    margin-top: 12px;
+    font-size: 13px;
+    border-radius: 8px;
+    padding: 0;
+    line-height: 1.6;
+    display: none;
+  }
+  .q-feedback.show { display: block; padding: 12px 16px; }
+  .q-feedback.correct-fb { background: rgba(138,170,142,0.12); color: #4e7a55; border: 1px solid rgba(122,170,130,0.3); }
+  .q-feedback.wrong-fb  { background: rgba(176,138,132,0.10); color: #8a5e58; border: 1px solid rgba(176,138,132,0.3); }
+  .q-feedback.open-fb   { background: rgba(120,150,168,0.10); color: var(--accent); border: 1px solid rgba(120,150,168,0.25); }
+
+  .q-textarea {
+    width: 100%;
+    min-height: 80px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    resize: vertical;
+    outline: none;
+    margin-bottom: 12px;
+    transition: border-color 0.2s;
+  }
+  /* ─── FIREBASE 連線設定頁 ─── */
+  .fb-status-bar {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    font-size: 13px;
+  }
+  .fb-status-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .fb-status-dot.connected    { background: #7aaa82; box-shadow: 0 0 0 3px rgba(122,170,130,0.2); }
+  .fb-status-dot.connecting   { background: #b8a86a; animation: pulse 1s infinite; }
+  .fb-status-dot.error        { background: #b08a84; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+  }
+
+  .fb-howto { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+  .fb-step {
+    display: flex; gap: 12px; align-items: flex-start;
+    font-size: 13px; color: var(--text-muted); line-height: 1.6;
+  }
+  .fb-step-num {
+    width: 22px; height: 22px; flex-shrink: 0;
+    background: rgba(120,150,168,0.15);
+    color: var(--accent);
+    border-radius: 50%;
+    font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 1px;
+  }
+  .fb-example {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .fb-example-label {
+    font-size: 11px; color: var(--text-muted);
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .fb-code {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--text);
+    padding: 14px 16px;
+    line-height: 1.7;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .fb-textarea {
+    width: 100%;
+    min-height: 180px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--text);
+    resize: vertical;
+    outline: none;
+    line-height: 1.7;
+    transition: border-color 0.2s;
+  }
+  .fb-textarea:focus { border-color: var(--accent); }
+  .fb-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+    margin-top: 6px;
+  }
+  .fb-input:focus { border-color: var(--accent); }
+  .fb-fields-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .fb-fields-table th {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .fb-fields-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid rgba(216,217,219,0.5);
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    word-break: break-all;
+  }
+  .fb-fields-table tr:last-child td { border-bottom: none; }
+  .fb-key { color: var(--accent4); }
+  .fb-val { color: var(--text); }
+
+  /* Google 表單產生器 */
+  .gform-unit-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 14px;
+    font-size: 13px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .gform-unit-toggle.active {
+    background: rgba(138,170,142,0.12);
+    border-color: rgba(138,170,142,0.4);
+    color: #4e7a55;
+  }
+  .gform-steps {
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap; margin-bottom: 14px; font-size: 12px;
+  }
+  .gform-step-item {
+    background: rgba(120,150,168,0.1);
+    border-radius: 6px; padding: 5px 10px;
+    color: var(--text-muted); white-space: nowrap;
+  }
+  .gform-step-arrow { color: var(--text-dim); font-size: 14px; }
+  .gform-textarea {
+    width: 100%; min-height: 320px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+    font-family: 'Noto Sans TC', sans-serif;
+    font-size: 13px; color: var(--text);
+    line-height: 1.8; resize: vertical; outline: none;
+  }
+
+  /* ── 題庫管理 ── */
+  .qlist { display:flex; flex-direction:column; gap:14px; }
+  .q-item {
+    background:var(--surface2); border:1px solid var(--border);
+    border-radius:12px; padding:16px;
+  }
+  .q-item-header {
+    display:flex; align-items:center; gap:10px; margin-bottom:12px;
+  }
+  .q-item-num {
+    background:var(--accent); color:#fff; border-radius:6px;
+    padding:2px 10px; font-size:12px; font-weight:700; flex-shrink:0;
+  }
+  .q-item-type {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:6px; padding:3px 10px; font-size:12px; color:var(--text-muted);
+  }
+  .q-item select, .q-item textarea, .q-item input[type="text"] {
+    width:100%; background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:9px 12px; font-family:inherit;
+    font-size:13px; color:var(--text); outline:none;
+    transition:border-color .2s;
+  }
+  .q-item select:focus, .q-item textarea:focus, .q-item input[type="text"]:focus {
+    border-color:var(--accent);
+  }
+  .q-item textarea { min-height:60px; resize:vertical; }
+  .q-item-label {
+    font-size:12px; color:var(--text-muted); font-weight:600;
+    margin-bottom:5px; margin-top:10px; letter-spacing:.3px;
+  }
+  .opts-editor { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
+  .opt-row {
+    display:flex; align-items:center; gap:8px;
+  }
+  .opt-row input[type="text"] { flex:1; }
+  .opt-correct-btn {
+    width:30px; height:30px; flex-shrink:0; border:2px solid var(--border);
+    border-radius:6px; cursor:pointer; background:var(--surface);
+    display:flex; align-items:center; justify-content:center; font-size:14px;
+    transition:all .15s;
+  }
+  .opt-correct-btn.active {
+    background:rgba(138,170,142,.2); border-color:var(--accent2); color:var(--accent2);
+  }
+  .opt-del-btn {
+    width:28px; height:28px; flex-shrink:0; border:1px solid rgba(176,138,132,.4);
+    border-radius:6px; cursor:pointer; background:transparent;
+    color:var(--accent3); font-size:14px; display:flex; align-items:center; justify-content:center;
+    transition:all .15s;
+  }
+  .opt-del-btn:hover { background:rgba(176,138,132,.1); }
+  .btn-add-opt {
+    font-size:12px; color:var(--accent); border:1px dashed rgba(120,150,168,.4);
+    background:transparent; border-radius:6px; padding:5px 12px;
+    cursor:pointer; font-family:inherit; margin-top:4px;
+    transition:background .15s;
+  }
+  .btn-add-opt:hover { background:rgba(120,150,168,.07); }
+  .q-item-actions {
+    display:flex; justify-content:flex-end; gap:8px; margin-top:12px;
+    padding-top:10px; border-top:1px solid var(--border);
+  }
+  .fb-pair { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media(max-width:600px){ .fb-pair { grid-template-columns:1fr; } }
+
+  /* ─── 儀表板數據 ─── */
+  .dash-loading { text-align:center; padding:24px; color:var(--text-dim); font-size:13px; }
+  .dash-spinner { display:inline-block; width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:dashSpin .7s linear infinite; vertical-align:middle; margin-right:6px; }
+  @keyframes dashSpin { to { transform:rotate(360deg); } }
+
+  .score-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .score-table th { background:var(--surface2); border-bottom:1px solid var(--border); padding:9px 12px; text-align:left; font-size:11px; color:var(--text-muted); font-weight:700; }
+  .score-table td { padding:10px 12px; border-bottom:1px solid rgba(180,185,190,.3); vertical-align:middle; }
+  .score-table tr:last-child td { border-bottom:none; }
+  .score-table tr:hover td { background:rgba(120,150,168,.04); }
+  .score-pill-sm { display:inline-block; border-radius:4px; padding:2px 8px; font-size:11px; font-weight:700; }
+  .sp-high { background:rgba(138,170,142,.18); color:#3d6b42; }
+  .sp-mid  { background:rgba(184,168,106,.15); color:#7a6a2a; }
+  .sp-low  { background:rgba(176,138,132,.15); color:#7a4840; }
+  .sp-pend { background:rgba(120,150,168,.12); color:var(--accent4); }
+
+  .review-item {
+    display:flex; align-items:flex-start; gap:12px;
+    padding:12px 14px; border-radius:8px;
+    background:var(--surface2); border:1px solid var(--border);
+    margin-bottom:8px;
+  }
+  .review-item:last-child { margin-bottom:0; }
+  .review-badge { font-size:11px; font-weight:700; border-radius:4px; padding:2px 8px; flex-shrink:0; margin-top:1px; }
+  .rb-open { background:rgba(120,150,168,.15); color:var(--accent4); }
+  .rb-fail  { background:rgba(176,138,132,.15); color:#7a4840; }
+  .review-body { flex:1; min-width:0; }
+  .review-student { font-size:12px; font-weight:700; margin-bottom:3px; }
+  .review-answer  { font-size:13px; color:var(--text); line-height:1.5; margin-bottom:4px; }
+  .review-q       { font-size:11px; color:var(--text-muted); }
+  .btn-adjust { background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:5px; padding:3px 10px; font-size:11px; font-family:inherit; cursor:pointer; transition:all .15s; }
+  .btn-adjust:hover { border-color:var(--accent2); color:var(--accent2); }
+
+  .timeline-item-new {
+    display:flex; gap:12px; padding:10px 0;
+    border-bottom:1px solid rgba(180,185,190,.25);
+  }
+  .timeline-item-new:last-child { border-bottom:none; }
+  .tl-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:5px; }
+  .tl-dot.login    { background:var(--accent); }
+  .tl-dot.unit_complete { background:var(--accent2); }
+  .tl-dot.all_complete  { background:#b8a86a; }
+  .tl-body { flex:1; min-width:0; }
+  .tl-title { font-size:13px; font-weight:600; }
+  .tl-meta  { font-size:11px; color:var(--text-dim); margin-top:2px; }
+
+  .unit-bar-row { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+  .unit-bar-label { width:120px; font-size:13px; color:var(--text-muted); flex-shrink:0; }
+  .unit-bar-track { flex:1; height:8px; background:var(--surface2); border-radius:4px; overflow:hidden; }
+  .unit-bar-fill  { height:100%; border-radius:4px; background:var(--accent2); transition:width .8s ease; }
+  .unit-bar-pct   { width:36px; font-size:12px; text-align:right; color:var(--text-muted); flex-shrink:0; }
+
+  /* ── 關鍵字設定 ── */
+  .kw-wrap { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; min-height:28px; }
+  .kw-tag {
+    display:inline-flex; align-items:center; gap:5px;
+    background:rgba(120,150,168,.12); border:1px solid rgba(120,150,168,.3);
+    border-radius:20px; padding:3px 10px;
+    font-size:12px; font-weight:700; color:var(--accent4);
+  }
+  .kw-tag button { background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:13px; line-height:1; padding:0 0 0 2px; }
+  .kw-tag button:hover { color:var(--accent3); }
+  .kw-input-row { display:flex; gap:6px; }
+  .kw-input-row input {
+    flex:1; background:var(--surface); border:1px solid var(--border);
+    border-radius:6px; padding:6px 10px; font-size:13px; font-family:inherit;
+    color:var(--text); outline:none; transition:border-color .2s;
+  }
+  .kw-input-row input:focus { border-color:var(--accent); }
+  .kw-add-btn {
+    background:rgba(120,150,168,.1); border:1px solid rgba(120,150,168,.3);
+    color:var(--accent4); border-radius:6px; padding:6px 12px;
+    font-size:12px; font-family:inherit; cursor:pointer; font-weight:700;
+    white-space:nowrap; transition:all .15s;
+  }
+  .kw-add-btn:hover { background:var(--accent4); color:#f5f5f4; }
+</style>
+
+</head>
+<body>
+
+<!-- ─── LOGIN ─── -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="logo-icon">🧲</div>
+      <div>
+        <div class="logo-text">AIXplore</div>
+        <div class="login-sub">特教 AI 教學系統 — 教師後台</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>帳號</label>
+      <input type="text" id="login-user" placeholder="請輸入教師帳號" value="teacher01">
+    </div>
+    <div class="form-group">
+      <label>密碼</label>
+      <input type="password" id="login-pass" placeholder="請輸入密碼" value="••••••••">
+    </div>
+    <button class="btn-primary" onclick="doLogin()">登入系統</button>
+    <div class="demo-hint">
+      示範帳號：teacher01 &nbsp;／&nbsp; 密碼：<span onclick="fillDemo()">點此填入</span>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MAIN APP ─── -->
+<div id="app" style="display:none; flex-direction:column;">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">
+        <div class="logo-icon">🧲</div>
+        <div class="logo-text">AIXplore</div>
+      </div>
+      <div class="topbar-badge">3上自然・單元4・磁鐵</div>
+    </div>
+    <div class="topbar-right">
+      <div class="user-chip">
+        <div class="user-avatar">AI</div>
+        <span>AI 老師</span>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">登出</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="nav-section-label">總覽</div>
+      <div class="nav-item active" onclick="showPage('dashboard', this)">
+        <span class="nav-icon">📊</span><span>學習儀表板</span>
+      </div>
+      <div class="nav-section-label">教材管理</div>
+      <div class="nav-item" onclick="showPage('models', this)">
+        <span class="nav-icon">🧊</span><span>3D 模型庫</span>
+      </div>
+      <div class="nav-item" onclick="showPage('content', this)">
+        <span class="nav-icon">📝</span><span>互動說明編輯</span>
+      </div>
+      <div class="nav-item" onclick="showPage('quiz', this)">
+        <span class="nav-icon">❓</span><span>互動題庫管理</span>
+      </div>
+      <div class="nav-item" onclick="showPage('voice', this)">
+        <span class="nav-icon">🎙️</span><span>語音管理</span>
+      </div>
+      <div class="nav-section-label">學生資料</div>
+      <div class="nav-item" onclick="showPage('students', this)">
+        <span class="nav-icon">👥</span><span>學生學習歷程</span>
+      </div>
+      <div class="nav-item" onclick="showPage('feedback', this)">
+        <span class="nav-icon">📋</span><span>學生回饋表單</span>
+      </div>
+      <div class="nav-section-label">系統設定</div>
+      <div class="nav-item" onclick="showPage('firebase', this)">
+        <span class="nav-icon">🔌</span><span>Firebase 連線</span>
+      </div>
+    </div>
+
+    <!-- Pages container -->
+    <div class="main-content">
+
+      <!-- ── DASHBOARD ── -->
+      <div id="page-dashboard">
+        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <div class="page-title">學習儀表板</div>
+            <div class="page-desc">國小三上自然科學・單元4「磁鐵」・即時 Firebase 數據</div>
+          </div>
+          <button class="btn-small" onclick="loadDashboard()" style="flex-shrink:0;">↺ 重新整理</button>
+        </div>
+
+        <!-- 統計卡 -->
+        <div class="grid-3" style="margin-bottom:20px;">
+          <div class="stat-card" data-icon="👥">
+            <div class="stat-label">本班學生數</div>
+            <div class="stat-value" style="color:var(--accent);" id="dash-student-count">—</div>
+            <div class="stat-sub" id="dash-student-sub" style="color:var(--text-dim);font-size:11px;">讀取中…</div>
+          </div>
+          <div class="stat-card" data-icon="✅">
+            <div class="stat-label">全班三關完成率</div>
+            <div class="stat-value" style="color:var(--accent2);" id="dash-complete-rate">—</div>
+            <div class="stat-sub" id="dash-complete-sub" style="color:var(--text-dim);font-size:11px;">讀取中…</div>
+          </div>
+          <div class="stat-card" data-icon="🎯">
+            <div class="stat-label">平均選擇題正確率</div>
+            <div class="stat-value" style="color:var(--accent4);" id="dash-acc-rate">—</div>
+            <div class="stat-sub" id="dash-acc-sub" style="color:var(--text-dim);font-size:11px;">讀取中…</div>
+            <div style="font-size:10px;color:var(--text-dim);margin-top:4px;">（不含簡答題）</div>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:20px;">
+          <!-- 各單元完成率 -->
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">📈</span>各學習單元完成率</div>
+            <div id="dash-unit-progress">
+              <div class="dash-loading"><span class="dash-spinner"></span>讀取中…</div>
+            </div>
+          </div>
+
+          <!-- 近期活動 -->
+          <div class="card">
+            <div class="card-title" style="justify-content:space-between;">
+              <span><span class="card-title-icon">🕐</span>近期活動紀錄</span>
+            </div>
+            <div id="dash-timeline" style="max-height:280px;overflow-y:auto;">
+              <div class="dash-loading"><span class="dash-spinner"></span>讀取中…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 分數記錄總表 -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-title" style="justify-content:space-between;">
+            <span><span class="card-title-icon">🏅</span>學生分數記錄</span>
+            <span id="dash-score-meta" style="font-size:12px;color:var(--text-muted);"></span>
+          </div>
+          <div id="dash-score-table">
+            <div class="dash-loading"><span class="dash-spinner"></span>讀取中…</div>
+          </div>
+        </div>
+
+
+      </div>
+
+      <!-- ── 3D MODELS ── -->
+      <div id="page-models" style="display:none;">
+        <div class="page-header">
+          <div class="page-title">3D 模型庫</div>
+          <div class="page-desc">上傳並管理前台 XR 場景使用的 3D 教材模型</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span class="card-title-icon">⬆️</span>上傳新模型</div>
+          <div class="upload-zone" id="upload-zone"
+            ondragover="event.preventDefault(); this.classList.add('drag-over')"
+            ondragleave="this.classList.remove('drag-over')"
+            ondrop="handleDrop(event)"
+            onclick="document.getElementById('file-input').click()">
+            <div class="upload-icon">🧊</div>
+            <div class="upload-title">拖曳檔案至此，或點擊上傳</div>
+            <div class="upload-sub">支援 3D 模型與圖片格式</div>
+            <div class="upload-formats">
+              <span class="format-tag">.glb</span>
+              <span class="format-tag">.gltf</span>
+              <span class="format-tag">.fbx</span>
+              <span class="format-tag">.obj</span>
+              <span class="format-tag">.png</span>
+              <span class="format-tag">.jpg</span>
+            </div>
+          </div>
+          <input type="file" id="file-input" style="display:none" onchange="handleFileSelect(event)">
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span class="card-title-icon">📦</span>已上傳模型</div>
+          <div class="model-list" id="model-list">
+            <div class="model-item">
+              <div class="model-thumb">🧲</div>
+              <div class="model-info">
+                <div class="model-name">horseshoe_magnet.glb</div>
+                <div class="model-meta">馬蹄形磁鐵・4.2 MB・2025/03/10 上傳</div>
+              </div>
+              <span class="model-status status-active">已啟用</span>
+              <div class="model-actions">
+                <button class="btn-small" onclick="previewModel('馬蹄形磁鐵','🧲','horseshoe_magnet.glb','4.2 MB')">預覽</button>
+                <button class="btn-small btn-danger" onclick="deleteModel(this)">刪除</button>
+              </div>
+            </div>
+            <div class="model-item">
+              <div class="model-thumb">🔩</div>
+              <div class="model-info">
+                <div class="model-name">iron_objects_set.glb</div>
+                <div class="model-meta">鐵製物件組・8.7 MB・2025/03/10 上傳</div>
+              </div>
+              <span class="model-status status-active">已啟用</span>
+              <div class="model-actions">
+                <button class="btn-small" onclick="previewModel('鐵製物件組','🔩','iron_objects_set.glb','8.7 MB')">預覽</button>
+                <button class="btn-small btn-danger" onclick="deleteModel(this)">刪除</button>
+              </div>
+            </div>
+            <div class="model-item">
+              <div class="model-thumb">🧱</div>
+              <div class="model-info">
+                <div class="model-name">lab_room_scene.glb</div>
+                <div class="model-meta">自然實驗室場景・23.1 MB・2025/03/08 上傳</div>
+              </div>
+              <span class="model-status status-draft">草稿</span>
+              <div class="model-actions">
+                <button class="btn-small" onclick="previewModel('自然實驗室場景','🧱','lab_room_scene.glb','23.1 MB')">預覽</button>
+                <button class="btn-small btn-danger" onclick="deleteModel(this)">刪除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 3D 模型預覽 Modal ── -->
+      <div id="model-modal" style="display:none; position:fixed; inset:0; background:rgba(58,61,66,0.45); z-index:500; align-items:center; justify-content:center;">
+        <div style="background:var(--surface); border:1px solid var(--border); border-radius:14px; width:480px; max-width:92vw; padding:28px; box-shadow:0 8px 40px rgba(80,90,100,0.18); animation:fadeUp 0.2s ease both;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+            <div style="font-size:16px; font-weight:700;" id="modal-title">模型預覽</div>
+            <button onclick="closeModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);line-height:1;">✕</button>
+          </div>
+          <!-- 3D 預覽區（示意框） -->
+          <div id="modal-preview-box" style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; height:220px; display:flex; flex-direction:column; align-items:center; justify-content:center; margin-bottom:18px; position:relative; overflow:hidden;">
+            <div id="modal-icon" style="font-size:64px; margin-bottom:10px;">🧲</div>
+            <div style="font-size:12px; color:var(--text-muted);">3D 預覽（需連接 WebGL 渲染器）</div>
+            <div style="position:absolute; bottom:10px; right:12px; display:flex; gap:6px;">
+              <button class="btn-small" style="font-size:11px;">旋轉 ↻</button>
+              <button class="btn-small" style="font-size:11px;">全螢幕 ⛶</button>
+            </div>
+          </div>
+          <div style="font-size:13px; color:var(--text-muted); margin-bottom:4px;" id="modal-filename"></div>
+          <div style="font-size:12px; color:var(--text-dim); margin-bottom:18px;" id="modal-filesize"></div>
+          <div style="font-size:13px; font-weight:500; margin-bottom:8px;">指定到哪個單元</div>
+          <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:20px;" id="modal-unit-assign">
+            <label class="unit-assign-row"><input type="checkbox" value="1"> 單元1・磁鐵吸什麼</label>
+            <label class="unit-assign-row"><input type="checkbox" value="2"> 單元2・有趣的磁鐵</label>
+            <label class="unit-assign-row"><input type="checkbox" value="3"> 單元3・磁鐵小釣手</label>
+          </div>
+          <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button class="btn-small" onclick="closeModal()">取消</button>
+            <button class="btn-submit" onclick="confirmModelAssign()">確認指定</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── CONTENT EDITOR ── -->
+      <div id="page-content" style="display:none;">
+        <div class="page-header">
+          <div class="page-title">互動說明編輯</div>
+          <div class="page-desc">編輯各單元的 AI 教師語音提示文字與教材說明</div>
+        </div>
+
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab(this,'ct1')">單元1・磁鐵吸什麼</div>
+          <div class="tab" onclick="switchTab(this,'ct2')">單元2・有趣的磁鐵</div>
+          <div class="tab" onclick="switchTab(this,'ct3')">單元3・磁鐵小釣手</div>
+        </div>
+
+        <!-- 單元1 -->
+        <div id="ct1">
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">📢</span>AI 教師開場白（語音文字）</div>
+            <div class="editor-area">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn" onclick="formatText('bold')"><b>B</b></button>
+                <button class="toolbar-btn" onclick="formatText('italic')"><i>I</i></button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn pause-btn" onclick="insertMark(this,'[停頓0.5秒]')" title="在游標處插入短停頓">⏸ 短停頓</button>
+                <button class="toolbar-btn pause-btn" onclick="insertMark(this,'[停頓1.0秒]')" title="在游標處插入長停頓">⏸⏸ 長停頓</button>
+                <button class="toolbar-btn pause-btn" onclick="wrapMark(this,'[強調]','[/強調]')" title="選取文字後點此加強調">★ 強調</button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn tts-btn" onclick="speakPreview(this)">🔊 語音預覽</button>
+                <button class="toolbar-btn" style="margin-left:auto;" onclick="showSaveBar()">儲存變更</button>
+              </div>
+              <div class="pause-legend"><code>[停頓0.5秒]</code> 短停頓 &nbsp;|&nbsp; <code>[停頓1.0秒]</code> 長停頓 &nbsp;|&nbsp; <code>[強調]文字[/強調]</code> 強調語氣</div>
+              <textarea class="editor-textarea" id="ct1-intro" oninput="showSaveBar()">同學們好！[停頓0.5秒]今天勇者義勇要去熔岩火山討伐大魔王，[停頓0.5秒]他穿上了磁鐵製成的盔甲！[停頓1.0秒]你能幫他找出路上哪些武器可以被磁鐵吸住嗎？[停頓0.5秒]讓我們一起來想想看，[強調]磁鐵到底可以吸住什麼東西[/強調]。</textarea>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">💡</span>學習重點說明</div>
+            <div class="editor-area">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn"><b>B</b></button><button class="toolbar-btn"><i>I</i></button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn pause-btn" onclick="insertMark(this,'[停頓0.5秒]')">⏸ 短停頓</button>
+                <button class="toolbar-btn pause-btn" onclick="insertMark(this,'[停頓1.0秒]')">⏸⏸ 長停頓</button>
+                <button class="toolbar-btn pause-btn" onclick="wrapMark(this,'[強調]','[/強調]')">★ 強調</button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn tts-btn" onclick="speakPreview(this)">🔊 語音預覽</button>
+                <button class="toolbar-btn" style="margin-left:auto;" onclick="showSaveBar()">儲存變更</button>
+              </div>
+              <div class="pause-legend"><code>[停頓0.5秒]</code> 短停頓 &nbsp;|&nbsp; <code>[強調]...[/強調]</code> 強調語氣</div>
+              <textarea id="ct1-intro" class="editor-textarea" oninput="showSaveBar()">磁鐵可以吸住含有[強調]「鐵」[/強調]的物品，[停頓0.5秒]例如：鐵球、鐵斧頭、鐵鎚。[停頓1.0秒]麻繩、木棍、鋁棒、玻璃球、布製斗篷等材料，[停頓0.5秒]磁鐵無法吸住。[停頓1.0秒]記住：[強調]不是所有金屬都能被磁鐵吸住喔！[/強調]鋁就不行。</textarea>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">🔁</span>AI 教師回饋語（答對時）</div>
+            <div class="editor-area">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn pause-btn" onclick="insertMark(this,'[停頓0.5秒]')">⏸ 短停頓</button>
+                <button class="toolbar-btn pause-btn" onclick="wrapMark(this,'[強調]','[/強調]')">★ 強調</button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn tts-btn" onclick="speakPreview(this)">🔊 語音預覽</button>
+                <button class="toolbar-btn" style="margin-left:auto;" onclick="showSaveBar()">儲存變更</button>
+              </div>
+              <textarea id="ct1-key" class="editor-textarea" oninput="showSaveBar()">答對了！[停頓0.5秒]鐵球、鐵斧頭和鐵鎚都含有鐵，[停頓0.5秒]所以可以被磁鐵吸住。[停頓1.0秒][強調]義勇的裝備變強了，繼續加油！[/強調]</textarea>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">💬</span>AI 教師回饋語（答錯時）</div>
+            <div class="editor-area">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn pause-btn" onclick="insertMark(this,'[停頓0.5秒]')">⏸ 短停頓</button>
+                <button class="toolbar-btn pause-btn" onclick="insertMark(this,'[停頓1.0秒]')">⏸⏸ 長停頓</button>
+                <button class="toolbar-btn pause-btn" onclick="wrapMark(this,'[強調]','[/強調]')">★ 強調</button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn tts-btn" onclick="speakPreview(this)">🔊 語音預覽</button>
+                <button class="toolbar-btn" style="margin-left:auto;" onclick="showSaveBar()">儲存變更</button>
+              </div>
+              <textarea id="ct1-fbc" class="editor-textarea" oninput="showSaveBar()">再想想看！[停頓0.5秒]磁鐵只能吸住含有[強調]「鐵」[/強調]的東西喔。[停頓1.0秒]鋁棒雖然是金屬，[停頓0.5秒]但不含鐵，所以磁鐵吸不住它。[停頓0.5秒]麻繩、木棍、玻璃和布也都不含鐵。</textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- 單元2 -->
+        <div id="ct2" style="display:none;">
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">📢</span>AI 教師開場白（語音文字）</div>
+            <div class="editor-area">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn"><b>B</b></button>
+                <button class="toolbar-btn"><i>I</i></button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn tts-btn" onclick="speakPreview(this)">🔊 語音預覽</button>
+                <button class="toolbar-btn" style="margin-left:auto;" onclick="showSaveBar()">儲存變更</button>
+              </div>
+              <textarea id="ct2-intro" class="editor-textarea" oninput="showSaveBar()">現在我們來認識磁鐵有趣的特性！磁鐵有兩個磁極，分別叫做 N 極和 S 極。當兩塊磁鐵靠近時，有時候會互相吸引，有時候會互相推開，你知道是什麼原因嗎？</textarea>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">💡</span>學習重點說明</div>
+            <div class="editor-area">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn"><b>B</b></button>
+                <button class="toolbar-btn"><i>I</i></button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn tts-btn" onclick="speakPreview(this)">🔊 語音預覽</button>
+                <button class="toolbar-btn" style="margin-left:auto;" onclick="showSaveBar()">儲存變更</button>
+              </div>
+              <textarea id="ct2-key" class="editor-textarea" oninput="showSaveBar()">磁鐵有 N 極（北極）和 S 極（南極）兩個磁極。
+同極靠近（N極對N極、S極對S極）→ 互相排斥（推開）。
+異極靠近（N極對S極）→ 互相吸引（靠近）。
+判斷口訣：同極排斥、異極相吸。</textarea>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">🔁</span>AI 教師回饋語（答對時）</div>
+            <div class="editor-area">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn"><b>B</b></button>
+                <button class="toolbar-btn"><i>I</i></button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn tts-btn" onclick="speakPreview(this)">🔊 語音預覽</button>
+                <button class="toolbar-btn" style="margin-left:auto;" onclick="showSaveBar()">儲存變更</button>
+              </div>
+              <textarea id="ct2-fbc" class="editor-textarea" oninput="showSaveBar()">太棒了！你答對了！記住「同極排斥、異極相吸」，這是磁鐵最重要的特性之一。生活中很多地方都用到這個原理喔！</textarea>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">💬</span>AI 教師回饋語（答錯時）</div>
+            <div class="editor-area">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn"><b>B</b></button>
+                <button class="toolbar-btn"><i>I</i></button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn tts-btn" onclick="speakPreview(this)">🔊 語音預覽</button>
+                <button class="toolbar-btn" style="margin-left:auto;" onclick="showSaveBar()">儲存變更</button>
+              </div>
+              <textarea id="ct2-fbw" class="editor-textarea" oninput="showSaveBar()">再試試看！請注意長條形磁鐵靠近圓形磁鐵時，兩個磁極的方向。如果是 N 極對 N 極，或 S 極對 S 極，就會互相推開。</textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- 單元3 -->
+        <div id="ct3" style="display:none;">
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">📢</span>AI 教師開場白（語音文字）</div>
+            <div class="editor-area">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn"><b>B</b></button>
+                <button class="toolbar-btn"><i>I</i></button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn tts-btn" onclick="speakPreview(this)">🔊 語音預覽</button>
+                <button class="toolbar-btn" style="margin-left:auto;" onclick="showSaveBar()">儲存變更</button>
+              </div>
+              <textarea id="ct3-intro" class="editor-textarea" oninput="showSaveBar()">現在我們要來玩磁鐵小釣手遊戲！準備好圓形磁鐵、長條形磁鐵、生物圖卡、竹筷子和棉線。我們要用磁鐵的特性來「釣魚」，想想看，要怎麼才能釣起圖卡上的小動物呢？</textarea>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">💡</span>學習重點說明</div>
+            <div class="editor-area">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn"><b>B</b></button>
+                <button class="toolbar-btn"><i>I</i></button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn tts-btn" onclick="speakPreview(this)">🔊 語音預覽</button>
+                <button class="toolbar-btn" style="margin-left:auto;" onclick="showSaveBar()">儲存變更</button>
+              </div>
+              <textarea id="ct3-key" class="editor-textarea" oninput="showSaveBar()">遊戲步驟：
+①將圓形磁鐵分別貼在生物圖卡上，注意：朝上的磁極不能都一樣。
+②將棉線一端綁在竹筷子上，另一端綁上長條形磁鐵，做成釣竿。
+
+釣魚原理（異極相吸）：
+・如果圖卡上的磁鐵 S 極朝上 → 用長條形磁鐵的 N 極才能吸住它。
+・如果圖卡上的磁鐵 N 極朝上 → 用長條形磁鐵的 S 極才能吸住它。</textarea>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">🔁</span>AI 教師回饋語（答對時）</div>
+            <div class="editor-area">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn"><b>B</b></button>
+                <button class="toolbar-btn"><i>I</i></button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn tts-btn" onclick="speakPreview(this)">🔊 語音預覽</button>
+                <button class="toolbar-btn" style="margin-left:auto;" onclick="showSaveBar()">儲存變更</button>
+              </div>
+              <textarea id="ct3-fbc" class="editor-textarea" oninput="showSaveBar()">釣到了！你成功應用了「異極相吸」的原理，把小動物釣起來了！你真的很厲害，完全掌握了磁鐵的特性！</textarea>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon">💬</span>AI 教師回饋語（答錯時）</div>
+            <div class="editor-area">
+              <div class="editor-toolbar">
+                <button class="toolbar-btn"><b>B</b></button>
+                <button class="toolbar-btn"><i>I</i></button>
+                <div class="toolbar-divider"></div>
+                <button class="toolbar-btn tts-btn" onclick="speakPreview(this)">🔊 語音預覽</button>
+                <button class="toolbar-btn" style="margin-left:auto;" onclick="showSaveBar()">儲存變更</button>
+              </div>
+              <textarea id="ct3-fbw" class="editor-textarea" oninput="showSaveBar()">差一點！記得「異極才能相吸」。先看清楚圖卡上的磁鐵是哪個極朝上，再換用釣竿磁鐵的另一極試試看。</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── QUIZ ── -->
+      <div id="page-quiz" style="display:none;">
+        <div class="page-header">
+          <div class="page-title">互動題庫管理</div>
+          <div class="page-desc">管理學生前台的題目、選項、正確答案與 AI 語音回饋語</div>
+        </div>
+
+        <!-- 視角切換 -->
+        <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; align-items:center;">
+          <button class="btn-view-toggle active" id="btn-teacher-view" onclick="switchView('teacher')">教師管理視角</button>
+          <button class="btn-view-toggle" id="btn-student-view" onclick="switchView('student')">學生前台預覽</button>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+            <button class="btn-small" style="color:var(--accent3);border-color:rgba(176,138,132,.4);font-size:12px;" onclick="forcePushToFirebase()">⚠ 強制推送題目到 Firebase</button>
+            <span id="autofill-status" style="font-size:11px;color:var(--text-dim);"></span>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px;padding:10px 14px;background:rgba(176,138,132,.06);border:1px solid rgba(176,138,132,.2);border-radius:8px;">
+          💡 如果學生前台顯示舊題目（如簡答題），請點「<strong>強制推送題目到 Firebase</strong>」覆蓋舊資料，學生重新整理後即生效。
+        </div>
+
+        <!-- 教師管理視角 -->
+        <div id="teacher-view">
+          <div class="tabs">
+            <div class="tab active" onclick="switchTab(this,'qt1')">單元1・磁鐵吸什麼</div>
+            <div class="tab" onclick="switchTab(this,'qt2')">單元2・有趣的磁鐵</div>
+            <div class="tab" onclick="switchTab(this,'qt3')">單元3・磁鐵小釣手</div>
+          </div>
+
+          <!-- 單元1 -->
+          <div id="qt1">
+            <div class="card">
+              <div class="card-title"><span class="card-title-icon">❓</span>單元1 題目管理</div>
+              <div id="qlist-1" class="qlist"></div>
+              <div style="display:flex;gap:8px;margin-top:14px;">
+                <button class="btn-add" onclick="addQuestion(1)">＋ 新增題目</button>
+                <button class="btn-small" style="color:var(--accent2);border-color:rgba(138,170,142,.4);" onclick="saveQuizToFirebase()">☁ 儲存所有題目到 Firebase</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 單元2 -->
+          <div id="qt2" style="display:none;">
+            <div class="card">
+              <div class="card-title"><span class="card-title-icon">❓</span>單元2 題目管理</div>
+              <div id="qlist-2" class="qlist"></div>
+              <div style="display:flex;gap:8px;margin-top:14px;">
+                <button class="btn-add" onclick="addQuestion(2)">＋ 新增題目</button>
+                <button class="btn-small" style="color:var(--accent2);border-color:rgba(138,170,142,.4);" onclick="saveQuizToFirebase()">☁ 儲存所有題目到 Firebase</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 單元3 -->
+          <div id="qt3" style="display:none;">
+            <div class="card">
+              <div class="card-title"><span class="card-title-icon">❓</span>單元3 題目管理</div>
+              <div id="qlist-3" class="qlist"></div>
+              <div style="display:flex;gap:8px;margin-top:14px;">
+                <button class="btn-add" onclick="addQuestion(3)">＋ 新增題目</button>
+                <button class="btn-small" style="color:var(--accent2);border-color:rgba(138,170,142,.4);" onclick="saveQuizToFirebase()">☁ 儲存所有題目到 Firebase</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 學生前台預覽 -->
+        <div id="student-view" style="display:none;">
+          <div class="card">
+            <div class="card-title" style="justify-content:space-between;">
+              <span><span class="card-title-icon">🎓</span>學生前台（index2.html）</span>
+              <div style="display:flex;gap:8px;">
+                <button class="btn-small" onclick="reloadStudentFrame()">重新載入</button>
+                <a href="index2.html" target="_blank" class="btn-small" style="text-decoration:none;">開新視窗 ↗</a>
+              </div>
+            </div>
+            <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#f5f0e8;">
+              <iframe id="student-frame" src="index2.html" width="100%" height="680" frameborder="0" style="display:block;"></iframe>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── STUDENTS ── -->
+      <div id="page-students" style="display:none;">
+        <div class="page-header">
+          <div class="page-title">學生學習歷程</div>
+          <div class="page-desc">從 Firebase Firestore（Users 集合）即時讀取學生資料</div>
+        </div>
+
+        <!-- Firebase 連線狀態提示 -->
+        <div class="fb-status-bar" style="margin-bottom:20px;">
+          <div class="fb-status-dot connected"></div>
+          <div>已連線 Firebase：<strong>xrtest-1d213</strong>　集合：<code style="background:rgba(120,150,168,0.12); padding:1px 6px; border-radius:3px; font-size:12px;">Users</code></div>
+          <button class="btn-small" style="margin-left:auto;" onclick="if(window._loadStudentsFromFirebase) window._loadStudentsFromFirebase(); else toast('Firebase 模組載入中，請稍候')">重新整理</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title" style="justify-content:space-between;">
+            <span><span class="card-title-icon">👥</span>全班學生資料</span>
+            <span style="font-size:12px; color:var(--text-muted);">共 <span id="fb-student-count" style="color:var(--accent); font-weight:600;">—</span> 位學生</span>
+          </div>
+          <table class="student-table">
+            <thead>
+              <tr>
+                <th>姓名</th>
+                <th>學號</th>
+                <th>學校</th>
+                <th>年級</th>
+                <th>身份</th>
+                <th>帳號狀態</th>
+                <th>作答進度</th>
+              </tr>
+            </thead>
+            <tbody id="students-tbody">
+              <tr><td colspan="7" style="text-align:center; padding:24px; color:var(--text-muted);">
+                點上方「重新整理」從 Firebase 讀取學生資料
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── FEEDBACK ── -->
+      <div id="page-feedback" style="display:none;">
+        <div class="page-header">
+          <div class="page-title">學生回饋表單</div>
+          <div class="page-desc">嵌入 Google 表單供學生填答，並讀取回應結果</div>
+        </div>
+
+        <!-- 表單網址設定 -->
+        <div class="card">
+          <div class="card-title"><span class="card-title-icon">🔗</span>表單連結設定</div>
+          <div class="form-group">
+            <label>Google 表單網址（學生填答頁）</label>
+            <input type="text" id="fb-form-url" class="fb-input"
+              placeholder="https://docs.google.com/forms/d/e/.../viewform"
+              value="https://docs.google.com/forms/d/e/1FAIpQLSca_LXJsGql5gfQw-KoitkMZy5m8Talu6iaZATxt5UKPqzKrQ/viewform">
+          </div>
+          <div class="form-group">
+            <label>Google 試算表網址（表單回應資料）</label>
+            <div style="font-size:11px; color:var(--text-dim); margin-bottom:6px;">
+              請到 Google 表單 → 回應 → 試算表圖示，建立連結試算表後，把網址貼在這裡
+            </div>
+            <input type="text" id="fb-response-sheet" class="fb-input"
+              placeholder="https://docs.google.com/spreadsheets/d/...">
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn-primary" style="max-width:160px; padding:10px; font-size:13px;" onclick="saveFeedbackConfig()">儲存設定</button>
+            <button class="btn-small" onclick="previewResponseData()">讀取回應資料 →</button>
+            <a id="fb-form-share-link" href="https://docs.google.com/forms/d/e/1FAIpQLSca_LXJsGql5gfQw-KoitkMZy5m8Talu6iaZATxt5UKPqzKrQ/viewform" target="_blank"
+              class="btn-small" style="text-decoration:none; display:inline-flex; align-items:center;">
+              分享表單給學生 ↗
+            </a>
+          </div>
+        </div>
+
+        <!-- 表單預覽（iframe 嵌入） -->
+        <div class="card">
+          <div class="card-title" style="justify-content:space-between;">
+            <span><span class="card-title-icon">📋</span>表單預覽</span>
+            <button class="btn-small" onclick="reloadFormPreview()">重新載入</button>
+          </div>
+          <div style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">
+            以下為學生看到的填答介面，老師可在此確認表單內容是否正確。
+          </div>
+          <div style="border:1px solid var(--border); border-radius:8px; overflow:hidden; background:white;">
+            <iframe id="form-iframe"
+              src="https://docs.google.com/forms/d/e/1FAIpQLSca_LXJsGql5gfQw-KoitkMZy5m8Talu6iaZATxt5UKPqzKrQ/viewform?embedded=true"
+              width="100%" height="600" frameborder="0" marginheight="0" marginwidth="0"
+              style="display:block;">
+              載入中…
+            </iframe>
+          </div>
+        </div>
+
+        <!-- 回應資料讀取 -->
+        <div class="card" id="response-card" style="display:none;">
+          <div class="card-title"><span class="card-title-icon">📊</span>學生回應資料</div>
+          <div id="response-table-area"></div>
+        </div>
+      </div>
+
+      <!-- ── VOICE ── -->
+      <div id="page-voice" style="display:none;">
+        <div class="page-header">
+          <div class="page-title">語音管理</div>
+          <div class="page-desc">管理 AI 教師語音：目前使用瀏覽器 TTS，可上傳預錄語音取代</div>
+        </div>
+
+        <!-- 說明橫幅 -->
+        <div class="voice-banner">
+          <div class="voice-banner-icon">🎙️</div>
+          <div>
+            <div style="font-weight:600; margin-bottom:4px;">目前語音模式：瀏覽器內建 TTS（特教優化版）</div>
+            <div style="font-size:12px; color:var(--text-muted); line-height:1.6;">
+              語速 0.78（較慢）、音調 1.15（偏柔和）、自動選擇女聲。<br>
+              如需更自然溫柔的語音，可在下方上傳<strong>預錄 mp3</strong>，系統會優先播放真人語音。
+            </div>
+          </div>
+          <div class="voice-mode-badge">TTS 模式</div>
+        </div>
+
+        <!-- 預錄語音上傳區 -->
+        <div class="card">
+          <div class="card-title"><span class="card-title-icon">🎵</span>預錄語音管理</div>
+          <div style="font-size:13px; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
+            上傳預錄好的 <code>.mp3</code> 或 <code>.wav</code> 檔案，對應到每個單元的語音片段。<br>
+            上傳後系統會用真人語音取代 TTS，對特教學生有更好的效果。
+          </div>
+
+          <!-- 錄音準備指引 -->
+          <div class="voice-guide">
+            <div class="voice-guide-title">📋 預錄語音準備指引</div>
+            <div class="voice-guide-body">
+              <div class="voice-guide-item">🎤 <strong>錄音建議</strong>：找一位語調溫柔、咬字清晰的老師或配音者錄製</div>
+              <div class="voice-guide-item">🐢 <strong>語速</strong>：比正常說話慢 20%，每句之間自然停頓 0.5–1 秒</div>
+              <div class="voice-guide-item">😊 <strong>情感</strong>：正向鼓勵、不急促，答錯時語氣溫和不責備</div>
+              <div class="voice-guide-item">🔊 <strong>格式</strong>：MP3 / WAV，建議 44.1kHz，單聲道即可，每個片段獨立一個檔案</div>
+              <div class="voice-guide-item">📁 <strong>命名規則</strong>：建議依照下方片段名稱命名，方便對應</div>
+            </div>
+          </div>
+
+          <!-- 各單元語音片段對應表 -->
+          <div class="tabs" style="margin-top:20px;">
+            <div class="tab active" onclick="switchTab(this,'vt1')">單元1・磁鐵吸什麼</div>
+            <div class="tab" onclick="switchTab(this,'vt2')">單元2・有趣的磁鐵</div>
+            <div class="tab" onclick="switchTab(this,'vt3')">單元3・磁鐵小釣手</div>
+          </div>
+
+          <div id="vt1">
+            <div class="voice-track-list">
+              <div class="voice-track-item">
+                <div class="voice-track-info">
+                  <div class="voice-track-name">開場白</div>
+                  <div class="voice-track-script">同學們好！今天勇者義勇要去熔岩火山討伐大魔王…</div>
+                </div>
+                <div class="voice-track-actions">
+                  <span class="voice-status tts">TTS</span>
+                  <button class="btn-small tts-preview-btn" onclick="speakTrack(this, '同學們好！今天勇者義勇要去熔岩火山討伐大魔王，他穿上了磁鐵製成的盔甲！你能幫他找出路上哪些武器可以被磁鐵吸住嗎？')">▶ 試聽</button>
+                  <label class="btn-small upload-label">上傳 mp3 <input type="file" accept=".mp3,.wav" style="display:none" onchange="uploadVoice(this,'u1-intro')"></label>
+                </div>
+              </div>
+              <div class="voice-track-item">
+                <div class="voice-track-info">
+                  <div class="voice-track-name">學習重點說明</div>
+                  <div class="voice-track-script">磁鐵可以吸住含有「鐵」的物品，例如：鐵球、鐵斧頭、鐵鎚…</div>
+                </div>
+                <div class="voice-track-actions">
+                  <span class="voice-status tts">TTS</span>
+                  <button class="btn-small tts-preview-btn" onclick="speakTrack(this, '磁鐵可以吸住含有鐵的物品，例如：鐵球、鐵斧頭、鐵鎚。麻繩、木棍、鋁棒、玻璃球等材料，磁鐵無法吸住。記住：不是所有金屬都能被磁鐵吸住喔！')">▶ 試聽</button>
+                  <label class="btn-small upload-label">上傳 mp3 <input type="file" accept=".mp3,.wav" style="display:none" onchange="uploadVoice(this,'u1-key')"></label>
+                </div>
+              </div>
+              <div class="voice-track-item">
+                <div class="voice-track-info">
+                  <div class="voice-track-name">回饋語・答對</div>
+                  <div class="voice-track-script">答對了！鐵球、鐵斧頭和鐵鎚都含有鐵，義勇的裝備變強了！</div>
+                </div>
+                <div class="voice-track-actions">
+                  <span class="voice-status tts">TTS</span>
+                  <button class="btn-small tts-preview-btn" onclick="speakTrack(this, '答對了！鐵球、鐵斧頭和鐵鎚都含有鐵，所以可以被磁鐵吸住。義勇的裝備變強了，繼續加油！')">▶ 試聽</button>
+                  <label class="btn-small upload-label">上傳 mp3 <input type="file" accept=".mp3,.wav" style="display:none" onchange="uploadVoice(this,'u1-correct')"></label>
+                </div>
+              </div>
+              <div class="voice-track-item">
+                <div class="voice-track-info">
+                  <div class="voice-track-name">回饋語・答錯</div>
+                  <div class="voice-track-script">再想想看！磁鐵只能吸住含有「鐵」的東西喔…</div>
+                </div>
+                <div class="voice-track-actions">
+                  <span class="voice-status tts">TTS</span>
+                  <button class="btn-small tts-preview-btn" onclick="speakTrack(this, '再想想看！磁鐵只能吸住含有鐵的東西喔。鋁棒雖然是金屬，但不含鐵，所以磁鐵吸不住它。麻繩、木棍、玻璃和布也都不含鐵。')">▶ 試聽</button>
+                  <label class="btn-small upload-label">上傳 mp3 <input type="file" accept=".mp3,.wav" style="display:none" onchange="uploadVoice(this,'u1-wrong')"></label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="vt2" style="display:none;">
+            <div class="voice-track-list">
+              <div class="voice-track-item">
+                <div class="voice-track-info"><div class="voice-track-name">開場白</div><div class="voice-track-script">現在我們來認識磁鐵有趣的特性！磁鐵有兩個磁極…</div></div>
+                <div class="voice-track-actions"><span class="voice-status tts">TTS</span><button class="btn-small tts-preview-btn" onclick="speakTrack(this,'現在我們來認識磁鐵有趣的特性！磁鐵有兩個磁極，分別叫做N極和S極。當兩塊磁鐵靠近時，有時候會互相吸引，有時候會互相推開，你知道是什麼原因嗎？')">▶ 試聽</button><label class="btn-small upload-label">上傳 mp3 <input type="file" accept=".mp3,.wav" style="display:none" onchange="uploadVoice(this,'u2-intro')"></label></div>
+              </div>
+              <div class="voice-track-item">
+                <div class="voice-track-info"><div class="voice-track-name">學習重點說明</div><div class="voice-track-script">同極靠近會排斥，異極靠近會吸引…</div></div>
+                <div class="voice-track-actions"><span class="voice-status tts">TTS</span><button class="btn-small tts-preview-btn" onclick="speakTrack(this,'磁鐵有N極和S極兩個磁極。同極靠近，也就是N極對N極或S極對S極，會互相排斥推開。異極靠近，也就是N極對S極，會互相吸引靠近。口訣：同極排斥、異極相吸。')">▶ 試聽</button><label class="btn-small upload-label">上傳 mp3 <input type="file" accept=".mp3,.wav" style="display:none" onchange="uploadVoice(this,'u2-key')"></label></div>
+              </div>
+              <div class="voice-track-item">
+                <div class="voice-track-info"><div class="voice-track-name">回饋語・答對</div><div class="voice-track-script">太棒了！你答對了！記住「同極排斥、異極相吸」…</div></div>
+                <div class="voice-track-actions"><span class="voice-status tts">TTS</span><button class="btn-small tts-preview-btn" onclick="speakTrack(this,'太棒了！你答對了！記住同極排斥、異極相吸，這是磁鐵最重要的特性之一。生活中很多地方都用到這個原理喔！')">▶ 試聽</button><label class="btn-small upload-label">上傳 mp3 <input type="file" accept=".mp3,.wav" style="display:none" onchange="uploadVoice(this,'u2-correct')"></label></div>
+              </div>
+              <div class="voice-track-item">
+                <div class="voice-track-info"><div class="voice-track-name">回饋語・答錯</div><div class="voice-track-script">再試試看！請注意兩個磁極的方向…</div></div>
+                <div class="voice-track-actions"><span class="voice-status tts">TTS</span><button class="btn-small tts-preview-btn" onclick="speakTrack(this,'再試試看！請注意長條形磁鐵靠近圓形磁鐵時，兩個磁極的方向。如果是N極對N極，或S極對S極，就會互相推開。')">▶ 試聽</button><label class="btn-small upload-label">上傳 mp3 <input type="file" accept=".mp3,.wav" style="display:none" onchange="uploadVoice(this,'u2-wrong')"></label></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="vt3" style="display:none;">
+            <div class="voice-track-list">
+              <div class="voice-track-item">
+                <div class="voice-track-info"><div class="voice-track-name">開場白</div><div class="voice-track-script">現在我們要來玩磁鐵小釣手遊戲！…</div></div>
+                <div class="voice-track-actions"><span class="voice-status tts">TTS</span><button class="btn-small tts-preview-btn" onclick="speakTrack(this,'現在我們要來玩磁鐵小釣手遊戲！我們要用磁鐵的特性來釣魚，想想看，要怎麼才能釣起圖卡上的小動物呢？')">▶ 試聽</button><label class="btn-small upload-label">上傳 mp3 <input type="file" accept=".mp3,.wav" style="display:none" onchange="uploadVoice(this,'u3-intro')"></label></div>
+              </div>
+              <div class="voice-track-item">
+                <div class="voice-track-info"><div class="voice-track-name">回饋語・答對</div><div class="voice-track-script">釣到了！你成功應用了「異極相吸」的原理！</div></div>
+                <div class="voice-track-actions"><span class="voice-status tts">TTS</span><button class="btn-small tts-preview-btn" onclick="speakTrack(this,'釣到了！你成功應用了異極相吸的原理，把小動物釣起來了！你真的很厲害，完全掌握了磁鐵的特性！')">▶ 試聽</button><label class="btn-small upload-label">上傳 mp3 <input type="file" accept=".mp3,.wav" style="display:none" onchange="uploadVoice(this,'u3-correct')"></label></div>
+              </div>
+              <div class="voice-track-item">
+                <div class="voice-track-info"><div class="voice-track-name">回饋語・答錯</div><div class="voice-track-script">差一點！記得「異極才能相吸」…</div></div>
+                <div class="voice-track-actions"><span class="voice-status tts">TTS</span><button class="btn-small tts-preview-btn" onclick="speakTrack(this,'差一點！記得異極才能相吸。先看清楚圖卡上的磁鐵是哪個極朝上，再換用釣竿磁鐵的另一極試試看。')">▶ 試聽</button><label class="btn-small upload-label">上傳 mp3 <input type="file" accept=".mp3,.wav" style="display:none" onchange="uploadVoice(this,'u3-wrong')"></label></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── FIREBASE 連線設定 ── -->
+      <div id="page-firebase" style="display:none;">
+        <div class="page-header">
+          <div class="page-title">Firebase 連線設定</div>
+          <div class="page-desc">由明右提供 Firebase config，貼入後儲存即可連線資料庫</div>
+        </div>
+
+        <!-- 連線狀態 -->
+        <div class="fb-status-bar" id="fb-status-bar">
+          <div class="fb-status-dot" id="fb-status-dot"></div>
+          <div id="fb-status-text">尚未設定連線</div>
+          <button class="btn-small" id="fb-test-btn" onclick="testFirebase()" style="margin-left:auto;">測試連線</button>
+        </div>
+
+        <!-- 說明 -->
+        <div class="card">
+          <div class="card-title"><span class="card-title-icon">📋</span>怎麼取得 Firebase Config？</div>
+          <div class="fb-howto">
+            <div class="fb-step"><span class="fb-step-num">1</span><div>請明右到 <strong>Firebase Console → 專案設定 → 你的應用程式</strong> 下方找到「firebaseConfig」物件</div></div>
+            <div class="fb-step"><span class="fb-step-num">2</span><div>把整個 config 複製起來，看起來會像右邊的格式</div></div>
+            <div class="fb-step"><span class="fb-step-num">3</span><div>貼到下方輸入區，按「儲存並連線」</div></div>
+            <div class="fb-step"><span class="fb-step-num">4</span><div>點「測試連線」確認是否成功讀取資料庫</div></div>
+          </div>
+          <div class="fb-example">
+            <div class="fb-example-label">Config 格式範例</div>
+            <pre class="fb-code">{
+  apiKey: "AIzaSy...",
+  authDomain: "your-project.firebaseapp.com",
+  databaseURL: "https://your-project-default-rtdb.firebaseio.com",
+  projectId: "your-project",
+  storageBucket: "your-project.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:abc123"
+}</pre>
+          </div>
+        </div>
+
+        <!-- Config 輸入 -->
+        <div class="card">
+          <div class="card-title"><span class="card-title-icon">🔧</span>輸入 Firebase Config</div>
+          <div style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">
+            將明右提供的 firebaseConfig 物件完整貼入，可以貼整段 JS 程式碼，系統會自動解析。
+          </div>
+          <textarea id="fb-config-input" class="fb-textarea" placeholder='貼上 firebaseConfig 內容，例如：
+{
+  apiKey: "AIzaSy...",
+  authDomain: "your-project.firebaseapp.com",
+  databaseURL: "https://...",
+  projectId: "your-project",
+  ...
+}'></textarea>
+          <div style="display:flex; gap:10px; margin-top:12px; align-items:center;">
+            <button class="btn-primary" style="max-width:160px; padding:10px; font-size:13px;" onclick="saveFirebaseConfig()">儲存並連線</button>
+            <button class="btn-small" onclick="clearFirebaseConfig()">清除設定</button>
+            <div id="fb-parse-hint" style="font-size:12px; color:var(--text-muted); margin-left:4px;"></div>
+          </div>
+        </div>
+
+        <!-- 已儲存的欄位 -->
+        <div class="card" id="fb-fields-card" style="display:none;">
+          <div class="card-title"><span class="card-title-icon">✅</span>已儲存的連線設定</div>
+          <table class="fb-fields-table" id="fb-fields-table"></table>
+          <div style="margin-top:14px; font-size:12px; color:var(--text-muted);">
+            ⚠ Config 儲存於瀏覽器 localStorage，換裝置或清除快取後需重新輸入。正式上線請由明右寫入程式碼。
+          </div>
+        </div>
+
+        <!-- 說明：資料流向 -->
+        <div class="card">
+          <div class="card-title"><span class="card-title-icon">🔄</span>資料流向說明</div>
+          <div class="fb-howto">
+            <div class="fb-step"><span class="fb-step-num">1</span><div>老師填寫 <strong>Google Sheets</strong>（學校、學號、年級、姓名）</div></div>
+            <div class="fb-step"><span class="fb-step-num">2</span><div>明右的程式自動將 Sheets 資料同步至 <strong>Firebase Firestore（Users 集合）</strong></div></div>
+            <div class="fb-step"><span class="fb-step-num">3</span><div>此後台直接讀取 Firebase，<strong>不需要再連 Google Sheets</strong></div></div>
+            <div class="fb-step"><span class="fb-step-num">4</span><div>前往「👥 學生學習歷程」即可看到即時學生資料</div></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /main-content -->
+  </div><!-- /layout -->
+</div><!-- /app -->
+
+<!-- Save bar -->
+<div class="save-bar" id="save-bar">
+  <span>⚠️ 有未儲存的變更</span>
+  <button class="btn-save" onclick="doSave()">儲存</button>
+  <button class="btn-discard" onclick="hideSaveBar()">放棄</button>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  function fillDemo() {
+    document.getElementById('login-user').value = 'teacher01';
+    document.getElementById('login-pass').value = 'pass1234';
+  }
+
+  function doLogin() {
+    const u = document.getElementById('login-user').value.trim();
+    if (!u) { alert('請輸入帳號'); return; }
+    document.getElementById('login-screen').style.display = 'none';
+    const app = document.getElementById('app');
+    app.style.display = 'flex';
+  }
+
+  function doLogout() {
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+  }
+
+  let currentPage = 'dashboard';
+  function showPage(page, el) {
+    document.getElementById('page-' + currentPage).style.display = 'none';
+    document.getElementById('page-' + page).style.display = '';
+    currentPage = page;
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    el.classList.add('active');
+    hideSaveBar();
+    // 切換到學生頁時自動從 Firebase 讀取
+    if (page === 'students' && window._loadStudentsFromFirebase) {
+      window._loadStudentsFromFirebase();
+    }
+  }
+
+  // switchTab：找同一個 .tabs 父層下的所有 tab，只隱藏/顯示兄弟 div
+  function switchTab(el, tabId) {
+    // deactivate sibling tabs
+    el.closest('.tabs').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    // find the parent container (the element right after .tabs)
+    const allGroups = ['ct1','ct2','ct3','qt1','qt2','qt3','vt1','vt2','vt3','sq1','sq2','sq3'];
+    // determine which group this tab belongs to by the tabId prefix
+    const prefix = tabId.replace(/\d+$/, '');
+    allGroups.filter(id => id.startsWith(prefix)).forEach(id => {
+      const el2 = document.getElementById(id);
+      if (el2) el2.style.display = (id === tabId) ? '' : 'none';
+    });
+  }
+
+  function showSaveBar() {
+    document.getElementById('save-bar').style.display = 'flex';
+  }
+  function hideSaveBar() {
+    document.getElementById('save-bar').style.display = 'none';
+  }
+  function doSave() {
+    hideSaveBar();
+    toast('儲存成功！✓');
+  }
+
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 2500);
+  }
+
+  let quizCount = 4;
+  function addQuiz() {
+    quizCount++;
+    const tbody = document.getElementById('quiz-body');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${quizCount}</td>
+      <td contenteditable="true" style="outline:none; border-radius:4px; padding:2px 4px;" oninput="showSaveBar()">請在此輸入題目內容...</td>
+      <td><span class="quiz-type-tag">單選題</span></td>
+      <td>⭐</td>
+      <td><div class="quiz-actions"><button class="btn-small" onclick="editQuiz(this)">編輯</button><button class="btn-small btn-danger" onclick="deleteQuiz(this)">刪除</button></div></td>`;
+    tbody.appendChild(tr);
+    showSaveBar();
+  }
+
+  function deleteQuiz(btn) {
+    if (confirm('確定要刪除這道題目嗎？')) {
+      btn.closest('tr').remove();
+      showSaveBar();
+    }
+  }
+
+  function editQuiz(btn) {
+    const td = btn.closest('tr').querySelector('td:nth-child(2)');
+    td.contentEditable = 'true';
+    td.style.outline = '1px solid rgba(120,150,168,0.5)';
+    td.focus();
+    showSaveBar();
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    document.getElementById('upload-zone').classList.remove('drag-over');
+    const files = e.dataTransfer.files;
+    if (files.length) processFiles(files);
+  }
+
+  function handleFileSelect(e) {
+    processFiles(e.target.files);
+  }
+
+  function processFiles(files) {
+    const list = document.getElementById('model-list');
+    Array.from(files).forEach(f => {
+      const item = document.createElement('div');
+      item.className = 'model-item';
+      item.style.animation = 'fadeUp 0.3s ease both';
+      item.innerHTML = `<div class="model-thumb">📁</div>
+        <div class="model-info">
+          <div class="model-name">${f.name}</div>
+          <div class="model-meta">${(f.size/1024/1024).toFixed(1)} MB・剛剛上傳</div>
+        </div>
+        <span class="model-status status-draft">處理中</span>
+        <div class="model-actions">
+          <button class="btn-small">預覽</button>
+          <button class="btn-small btn-danger" onclick="deleteModel(this)">刪除</button>
+        </div>`;
+      list.appendChild(item);
+      setTimeout(() => {
+        item.querySelector('.model-status').className = 'model-status status-active';
+        item.querySelector('.model-status').textContent = '已啟用';
+      }, 1500);
+    });
+    toast(`已上傳 ${files.length} 個檔案`);
+  }
+
+  function deleteModel(btn) {
+    if (confirm('確定要刪除此模型？')) {
+      btn.closest('.model-item').remove();
+      toast('模型已刪除');
+    }
+  }
+
+  // ── 3D 模型預覽 Modal ──
+  function previewModel(name, icon, filename, size) {
+    document.getElementById('modal-title').textContent = '模型預覽・' + name;
+    document.getElementById('modal-icon').textContent = icon;
+    document.getElementById('modal-filename').textContent = filename;
+    document.getElementById('modal-filesize').textContent = size + '　・　GLB 格式';
+    const m = document.getElementById('model-modal');
+    m.style.display = 'flex';
+  }
+  function closeModal() {
+    document.getElementById('model-modal').style.display = 'none';
+  }
+  function confirmModelAssign() {
+    const checks = document.querySelectorAll('#modal-unit-assign input:checked');
+    const units = Array.from(checks).map(c => '單元' + c.value).join('、');
+    closeModal();
+    toast(units ? '已指定至 ' + units : '未選擇單元，設定未變更');
+  }
+
+  // ── 斷句 / 強調 插入 ──
+  function insertMark(btn, mark) {
+    const ta = btn.closest('.editor-area').querySelector('textarea');
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    ta.value = ta.value.slice(0, s) + mark + ta.value.slice(e);
+    ta.selectionStart = ta.selectionEnd = s + mark.length;
+    ta.focus();
+    showSaveBar();
+  }
+  function wrapMark(btn, open, close) {
+    const ta = btn.closest('.editor-area').querySelector('textarea');
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const sel = ta.value.slice(s, e) || '文字';
+    ta.value = ta.value.slice(0, s) + open + sel + close + ta.value.slice(e);
+    ta.focus();
+    showSaveBar();
+  }
+
+  // ── AI 對話紀錄 ──
+  const dialogData = {
+    chen: {
+      insight: null,
+      log: [
+        {role:'ai', time:'10:10', text:'同學們好！[停頓0.5秒]今天勇者義勇要去熔岩火山討伐大魔王…'},
+        {role:'student', time:'10:11', text:'老師，鋁棒可以被吸住嗎？'},
+        {role:'ai', time:'10:11', text:'很好的問題！鋁雖然是金屬，但不含鐵，所以磁鐵吸不住它喔。'},
+        {role:'student', time:'10:12', text:'我知道了！那鐵球、鐵斧頭、鐵鎚都可以！'},
+        {role:'ai', time:'10:12', text:'答對了！義勇的裝備變強了，繼續加油！'},
+      ]
+    },
+    lin: {
+      insight: null,
+      log: [
+        {role:'ai', time:'10:05', text:'現在我們來認識磁鐵有趣的特性！磁鐵有 N 極和 S 極…'},
+        {role:'student', time:'10:06', text:'同極靠近為什麼會推開？'},
+        {role:'ai', time:'10:06', text:'這是磁鐵的天然特性，同極性的磁力方向相同，所以會互相排斥。'},
+        {role:'student', time:'10:08', text:'那冰箱上的磁鐵是怎麼吸住的？'},
+        {role:'ai', time:'10:08', text:'冰箱門含有鐵，磁鐵的異極對鐵產生吸力，所以能吸住！'},
+      ]
+    },
+    wang: {
+      insight: { title: '⚠ 教師注意：概念誤解警示', text: '王小美今天共問了 3 次「為什麼磁鐵不吸我的手？」，顯示她對「磁鐵只吸含鐵物品」的概念尚未建立。建議老師下次課進行一對一澄清，或安排實物操作活動。' },
+      log: [
+        {role:'ai', time:'09:50', text:'同學好！今天我們要探索磁鐵可以吸住什麼東西…'},
+        {role:'student', time:'09:51', text:'老師，為什麼磁鐵不吸我的手？'},
+        {role:'ai', time:'09:51', text:'因為磁鐵只能吸住含有鐵的東西，你的手不含鐵，所以吸不住喔！'},
+        {role:'student', time:'09:53', text:'但是我的手有骨頭，骨頭是鐵的嗎？'},
+        {role:'ai', time:'09:53', text:'骨頭主要是鈣，不是鐵，所以磁鐵吸不住骨頭。'},
+        {role:'student', time:'09:55', text:'那為什麼磁鐵還是不吸我的手呢？'},
+        {role:'ai', time:'09:56', text:'沒關係，我們來找找教室裡哪些東西會被磁鐵吸住，你試試看！'},
+      ]
+    },
+    zhang: {
+      insight: null,
+      log: [
+        {role:'ai', time:'16:20', text:'現在我們要來玩磁鐵小釣手遊戲！'},
+        {role:'student', time:'16:21', text:'我知道了！S極朝上要用N極釣，N極朝上要用S極釣！'},
+        {role:'ai', time:'16:21', text:'完全正確！你已經掌握了異極相吸的原理，非常棒！'},
+        {role:'student', time:'16:22', text:'那生活中除了冰箱磁鐵，還有什麼用到磁力？'},
+        {role:'ai', time:'16:23', text:'很好的延伸問題！指南針、門扣、電動馬達、MRI 醫療設備都用到磁力喔！'},
+      ]
+    }
+  };
+  // 對話紀錄功能已移除
+
+  function reloadStudentFrame() {
+    const f = document.getElementById('student-frame');
+    if(f) { f.src = ''; f.src = 'aixplore_student.html'; }
+  }
+
+  function switchView(v) {
+    document.getElementById('teacher-view').style.display = v === 'teacher' ? '' : 'none';
+    document.getElementById('student-view').style.display  = v === 'student'  ? '' : 'none';
+    document.getElementById('btn-teacher-view').classList.toggle('active', v === 'teacher');
+    document.getElementById('btn-student-view').classList.toggle('active',  v === 'student');
+  }
+
+  function toggleMulti(el, qid) {
+    el.classList.toggle('selected');
+  }
+
+  function selectSingle(el, qid) {
+    const parent = el.closest('.options-row, .options-col, .options-grid');
+    parent.querySelectorAll('.opt-item').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+  }
+
+  function checkMulti(qid) {
+    const opts = document.querySelectorAll(`#${qid}-opts .opt-item`);
+    const fb = document.getElementById(`${qid}-feedback`);
+    let allRight = true;
+    opts.forEach(o => {
+      const shouldBeSelected = o.dataset.correct === 'true';
+      const isSelected = o.classList.contains('selected');
+      o.classList.remove('selected');
+      if (shouldBeSelected && isSelected) { o.classList.add('correct'); }
+      else if (!shouldBeSelected && !isSelected) { o.classList.add('correct'); }
+      else { o.classList.add('wrong'); allRight = false; }
+    });
+    fb.className = 'q-feedback show ' + (allRight ? 'correct-fb' : 'wrong-fb');
+    fb.textContent = allRight
+      ? '✓ 答對了！鐵球、鐵斧頭和鐵鎚都含有鐵，所以可以被磁鐵吸住。義勇的裝備變強了！'
+      : '✗ 再想想看！磁鐵只能吸住含有「鐵」的東西。鋁棒雖然是金屬，但不含鐵，磁鐵吸不住。';
+  }
+
+  function checkSingle(qid) {
+    const opts = document.querySelectorAll(`#${qid}-opts .opt-item`);
+    const fb = document.getElementById(`${qid}-feedback`);
+    let selected = null;
+    opts.forEach(o => { if (o.classList.contains('selected')) selected = o; });
+    if (!selected) { fb.className = 'q-feedback show open-fb'; fb.textContent = '請先選擇一個答案。'; return; }
+    const correct = selected.dataset.correct === 'true';
+    opts.forEach(o => {
+      o.classList.remove('selected');
+      if (o.dataset.correct === 'true') o.classList.add('correct');
+    });
+    if (!correct) selected.classList.add('wrong');
+    fb.className = 'q-feedback show ' + (correct ? 'correct-fb' : 'wrong-fb');
+    const msgs = {
+      q2: ['✓ 答對！N極對S極是異極，所以互相吸引，不會推開。','✗ 再想想！N極對S極是異極，異極相吸，不會推開。'],
+      q3: ['✓ 答對！S極對S極是同極，同極排斥，會把圓形磁鐵推開！','✗ 再想想！S極對S極是同極，同極排斥，會互相推開。'],
+      q4: ['✓ 答對！「同極排斥、異極相吸」是磁鐵最重要的特性。','✗ 再想想！同極靠近時，兩個磁鐵會互相推開（排斥），不是吸引。'],
+      q7: ['✓ 答對！S極朝上，要用N極才能吸住（異極相吸）。','✗ 再想想！S極和N極是異極，異極才能相吸。'],
+      q8: ['✓ 答對！N極朝上，要用S極才能吸住（異極相吸）。','✗ 再想想！N極和S極是異極，異極才能相吸。'],
+    };
+    fb.textContent = (msgs[qid] || ['✓ 答對！','✗ 再想想！'])[correct ? 0 : 1];
+  }
+
+  function checkOpen(qid) {
+    const ans = document.getElementById(`${qid}-ans`).value.trim();
+    const fb = document.getElementById(`${qid}-feedback`);
+    if (!ans) { fb.className = 'q-feedback show open-fb'; fb.textContent = '請先輸入你的答案。'; return; }
+    fb.className = 'q-feedback show open-fb';
+    fb.textContent = '✓ 已收到你的答案！老師會幫你批改。';
+  }
+
+  // ── 語音管理頁：試聽單一片段 ──
+  let currentTrackBtn = null;
+  function speakTrack(btn, text) {
+    if (currentTrackBtn === btn && window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+      btn.textContent = '▶ 試聽';
+      btn.classList.remove('playing');
+      currentTrackBtn = null;
+      return;
+    }
+    window.speechSynthesis.cancel();
+    if (currentTrackBtn) { currentTrackBtn.textContent = '▶ 試聽'; currentTrackBtn.classList.remove('playing'); }
+    if (!window.speechSynthesis) { toast('此瀏覽器不支援語音合成'); return; }
+    const tryIt = () => {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'zh-TW'; utter.rate = 0.78; utter.pitch = 1.15; utter.volume = 1.0;
+      const voices = window.speechSynthesis.getVoices();
+      const v = voices.find(v => (v.lang==='zh-TW'||v.lang.startsWith('zh')) && /meijia|美嘉|female|tingting|雅慧|雅云/i.test(v.name))
+             || voices.find(v => v.lang==='zh-TW') || voices.find(v => v.lang.startsWith('zh'));
+      if (v) utter.voice = v;
+      btn.textContent = '⏹ 停止'; btn.classList.add('playing'); currentTrackBtn = btn;
+      utter.onend = utter.onerror = () => { btn.textContent = '▶ 試聽'; btn.classList.remove('playing'); if(currentTrackBtn===btn) currentTrackBtn=null; };
+      window.speechSynthesis.speak(utter);
+    };
+    window.speechSynthesis.getVoices().length === 0
+      ? (window.speechSynthesis.onvoiceschanged = tryIt)
+      : tryIt();
+  }
+
+  // ── 語音管理頁：上傳預錄語音 ──
+  function uploadVoice(input, trackId) {
+    const file = input.files[0];
+    if (!file) return;
+    const item = input.closest('.voice-track-item');
+    const badge = item.querySelector('.voice-status');
+    const previewBtn = item.querySelector('.tts-preview-btn');
+    badge.textContent = '預錄'; badge.className = 'voice-status recorded';
+    item.classList.add('has-audio');
+    // 建立本地 object URL 讓老師可以立即試播
+    const url = URL.createObjectURL(file);
+    previewBtn.textContent = '▶ 試聽';
+    previewBtn.onclick = () => {
+      const audio = new Audio(url);
+      previewBtn.textContent = '⏹ 停止'; previewBtn.classList.add('playing');
+      audio.play();
+      audio.onended = () => { previewBtn.textContent = '▶ 試聽'; previewBtn.classList.remove('playing'); };
+      previewBtn.onclick = () => { audio.pause(); audio.currentTime=0; previewBtn.textContent='▶ 試聽'; previewBtn.classList.remove('playing'); previewBtn.onclick = () => { audio.currentTime=0; audio.play(); }; };
+    };
+    toast(`已上傳：${file.name}`);
+  }
+
+  // ── 語音預覽 TTS（特教優化版）──
+  let currentUtterance = null;
+  let currentTtsBtn = null;
+
+  // 停頓標記 → 真正的停頓（拆分句子分段說）
+  function buildSegments(raw) {
+    // 先移除強調標籤（保留內容）
+    raw = raw.replace(/\[強調\]([\s\S]*?)\[\/強調\]/g, '$1');
+    // 拆分成 [文字, 停頓時間ms, 文字, 停頓, ...]
+    const parts = raw.split(/(\[停頓([\d.]+)秒\])/g);
+    const segments = [];
+    let i = 0;
+    while (i < parts.length) {
+      const txt = parts[i].replace(/\n/g, '，').trim();
+      if (txt) segments.push({ type: 'speech', text: txt });
+      if (parts[i+1] && parts[i+1].startsWith('[停頓')) {
+        const ms = Math.round(parseFloat(parts[i+2]) * 1000);
+        segments.push({ type: 'pause', ms });
+        i += 3;
+      } else {
+        i++;
+      }
+    }
+    return segments.filter(s => s.type !== 'speech' || s.text.length > 0);
+  }
+
+  function speakSegments(segments, btn, idx) {
+    if (idx >= segments.length) {
+      btn.textContent = '🔊 語音預覽';
+      btn.classList.remove('speaking');
+      if (currentTtsBtn === btn) currentTtsBtn = null;
+      return;
+    }
+    const seg = segments[idx];
+    if (seg.type === 'pause') {
+      setTimeout(() => speakSegments(segments, btn, idx + 1), seg.ms);
+    } else {
+      const utter = new SpeechSynthesisUtterance(seg.text);
+      utter.lang = 'zh-TW';
+      utter.rate = 0.78;      // 慢而清晰
+      utter.pitch = 1.15;     // 稍高音調 → 偏柔和溫暖
+      utter.volume = 1.0;
+
+      // 優先選女聲（名稱含 Meijia / 美嘉 / Female / 女）
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = voices.find(v =>
+        (v.lang === 'zh-TW' || v.lang.startsWith('zh')) &&
+        /meijia|美嘉|female|tingting|ting-ting|雅慧|雅云/i.test(v.name)
+      ) || voices.find(v => v.lang === 'zh-TW')
+        || voices.find(v => v.lang.startsWith('zh'));
+      if (preferred) utter.voice = preferred;
+
+      currentUtterance = utter;
+      utter.onend = utter.onerror = () => {
+        if (currentTtsBtn !== btn) return; // 已被中止
+        speakSegments(segments, btn, idx + 1);
+      };
+      window.speechSynthesis.speak(utter);
+    }
+  }
+
+  function speakPreview(btn) {
+    if (currentTtsBtn === btn && window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+      btn.textContent = '🔊 語音預覽';
+      btn.classList.remove('speaking');
+      currentTtsBtn = null;
+      return;
+    }
+    window.speechSynthesis.cancel();
+    if (currentTtsBtn) {
+      currentTtsBtn.textContent = '🔊 語音預覽';
+      currentTtsBtn.classList.remove('speaking');
+    }
+
+    const ta = btn.closest('.editor-area').querySelector('textarea');
+    if (!ta || !ta.value.trim()) { toast('沒有文字可以預覽'); return; }
+    if (!window.speechSynthesis) { toast('此瀏覽器不支援語音合成'); return; }
+
+    // 若 voices 尚未載入，等一下
+    const trySpeak = () => {
+      const segments = buildSegments(ta.value);
+      if (!segments.length) return;
+      btn.textContent = '⏹ 停止播放';
+      btn.classList.add('speaking');
+      currentTtsBtn = btn;
+      speakSegments(segments, btn, 0);
+    };
+
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length === 0) {
+      window.speechSynthesis.onvoiceschanged = () => { trySpeak(); };
+    } else {
+      trySpeak();
+    }
+  }
+
+  // ── Firebase 連線設定 ──
+  const FB_STORAGE_KEY = 'aixplore_fb_config';
+
+  // 頁面載入時還原已儲存的設定
+  window.addEventListener('load', () => {
+    const saved = localStorage.getItem(FB_STORAGE_KEY);
+    if (saved) {
+      try {
+        const cfg = JSON.parse(saved);
+        document.getElementById('fb-config-input').value = JSON.stringify(cfg, null, 2);
+        renderFbFields(cfg);
+        setFbStatus('saved', '已儲存設定（尚未測試連線）');
+      } catch(e) {}
+    }
+  });
+
+  function parseFirebaseConfig(raw) {
+    // 支援兩種格式：純 JSON 物件 或 const firebaseConfig = {...}
+    raw = raw.trim();
+    // 移除 JS 賦值語法包裝
+    raw = raw.replace(/^(?:const|let|var)\s+\w+\s*=\s*/, '');
+    raw = raw.replace(/;?\s*$/, '');
+    // 把 JS 物件 key 轉成 JSON key（補上引號）
+    raw = raw.replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":');
+    return JSON.parse(raw);
+  }
+
+  function saveFirebaseConfig() {
+    const hint = document.getElementById('fb-parse-hint');
+    const raw = document.getElementById('fb-config-input').value.trim();
+    if (!raw) { hint.textContent = '請先貼上 config 內容'; hint.style.color = 'var(--accent3)'; return; }
+    try {
+      const cfg = parseFirebaseConfig(raw);
+      // 驗證必要欄位
+      const required = ['apiKey', 'authDomain', 'projectId'];
+      const missing = required.filter(k => !cfg[k]);
+      if (missing.length) {
+        hint.textContent = `缺少欄位：${missing.join(', ')}`;
+        hint.style.color = 'var(--accent3)';
+        return;
+      }
+      localStorage.setItem(FB_STORAGE_KEY, JSON.stringify(cfg));
+      renderFbFields(cfg);
+      setFbStatus('saved', '設定已儲存，請點「測試連線」確認');
+      hint.textContent = '✓ 解析成功，已儲存';
+      hint.style.color = 'var(--accent2)';
+      toast('Firebase 設定已儲存！');
+    } catch(e) {
+      hint.textContent = '格式錯誤，請確認是否為正確的 firebaseConfig 物件';
+      hint.style.color = 'var(--accent3)';
+    }
+  }
+
+  function renderFbFields(cfg) {
+    const card = document.getElementById('fb-fields-card');
+    const table = document.getElementById('fb-fields-table');
+    card.style.display = '';
+    table.innerHTML = `<tr><th>欄位</th><th>值</th></tr>` +
+      Object.entries(cfg).map(([k, v]) =>
+        `<tr><td class="fb-key">${k}</td><td class="fb-val">${String(v).slice(0,60)}${String(v).length > 60 ? '…' : ''}</td></tr>`
+      ).join('');
+  }
+
+  function clearFirebaseConfig() {
+    if (!confirm('確定要清除所有 Firebase 設定嗎？')) return;
+    localStorage.removeItem(FB_STORAGE_KEY);
+    document.getElementById('fb-config-input').value = '';
+    document.getElementById('fb-fields-card').style.display = 'none';
+    document.getElementById('fb-parse-hint').textContent = '';
+    setFbStatus('none', '尚未設定連線');
+    toast('設定已清除');
+  }
+
+  function setFbStatus(state, msg) {
+    const dot = document.getElementById('fb-status-dot');
+    const text = document.getElementById('fb-status-text');
+    dot.className = 'fb-status-dot' + (state === 'connected' ? ' connected' : state === 'connecting' ? ' connecting' : state === 'error' ? ' error' : '');
+    text.textContent = msg;
+  }
+
+  function testFirebase() {
+    const saved = localStorage.getItem(FB_STORAGE_KEY);
+    if (!saved) { toast('請先儲存 Firebase 設定'); return; }
+    setFbStatus('connecting', '連線測試中…');
+    document.getElementById('fb-test-btn').textContent = '測試中…';
+    // 模擬連線測試（實際串接時換成 Firebase SDK initializeApp）
+    setTimeout(() => {
+      try {
+        const cfg = JSON.parse(saved);
+        if (cfg.apiKey && cfg.projectId) {
+          setFbStatus('connected', `已連線：${cfg.projectId}`);
+          toast('連線測試成功！');
+        } else {
+          setFbStatus('error', '設定格式有誤');
+        }
+      } catch(e) {
+        setFbStatus('error', '連線失敗，請確認 config 正確');
+      }
+      document.getElementById('fb-test-btn').textContent = '測試連線';
+    }, 1400);
+  }
+
+  // ── 學生回饋表單頁 ──
+  function saveFeedbackConfig() {
+    const formUrl   = document.getElementById('fb-form-url').value.trim();
+    const sheetUrl  = document.getElementById('fb-response-sheet').value.trim();
+    if (!formUrl) { toast('請輸入表單網址'); return; }
+
+    // 更新 iframe src（把 viewform 換成 embedded）
+    const embedUrl = formUrl.replace('/viewform', '/viewform?embedded=true').replace('?usp=dialog','').replace('?usp=sharing','');
+    document.getElementById('form-iframe').src = embedUrl;
+
+    // 更新分享連結
+    document.getElementById('fb-form-share-link').href = formUrl;
+
+    // 儲存到 localStorage
+    localStorage.setItem('aixplore_feedback_config', JSON.stringify({ formUrl, sheetUrl }));
+    toast('設定已儲存！');
+  }
+
+  function reloadFormPreview() {
+    const iframe = document.getElementById('form-iframe');
+    iframe.src = iframe.src; // 重新載入
+  }
+
+  function previewResponseData() {
+    const sheetUrl = document.getElementById('fb-response-sheet').value.trim();
+    if (!sheetUrl) {
+      toast('請先填入試算表網址（表單回應資料）');
+      return;
+    }
+    // 從網址提取試算表 ID
+    const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    if (!match) { toast('試算表網址格式不正確'); return; }
+    const sheetId = match[1];
+
+    const card = document.getElementById('response-card');
+    const area  = document.getElementById('response-table-area');
+    card.style.display = '';
+    area.innerHTML = `<div style="padding:16px; color:var(--text-muted); text-align:center;">讀取中…</div>`;
+
+    // 用 gviz JSONP 讀取
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json`;
+    const script = document.createElement('script');
+    window._fbRespCallback = function(resp) {
+      document.head.removeChild(script);
+      try {
+        const cols = resp.table.cols.map(c => c.label || c.id);
+        const rows = resp.table.rows || [];
+        if (!cols.length) { area.innerHTML = `<div style="padding:16px;color:var(--text-muted);">試算表是空的</div>`; return; }
+
+        let html = `<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">共 ${rows.length} 筆回應</div>`;
+        html += `<div style="overflow-x:auto;"><table class="fb-fields-table"><thead><tr>`;
+        cols.forEach(c => { html += `<th>${c}</th>`; });
+        html += `</tr></thead><tbody>`;
+        rows.forEach(r => {
+          html += `<tr>`;
+          r.c.forEach(cell => { html += `<td>${cell && cell.v != null ? cell.v : '—'}</td>`; });
+          html += `</tr>`;
+        });
+        html += `</tbody></table></div>`;
+        area.innerHTML = html;
+        toast(`✓ 讀取到 ${rows.length} 筆回應`);
+      } catch(e) {
+        area.innerHTML = `<div style="padding:16px;color:var(--accent3);">解析失敗：${e.message}</div>`;
+      }
+    };
+    script.onerror = () => {
+      document.head.removeChild(script);
+      area.innerHTML = `<div style="padding:16px;color:var(--accent3);line-height:1.6;">
+        ❌ 無法讀取。請確認試算表已設為「知道連結的任何人可檢視」
+      </div>`;
+    };
+    script.src = url + '&callback=_fbRespCallback';
+    document.head.appendChild(script);
+    setTimeout(() => {
+      if (area.innerHTML.includes('讀取中')) {
+        area.innerHTML = `<div style="padding:16px;color:var(--accent3);">讀取逾時，請確認試算表已公開</div>`;
+      }
+    }, 6000);
+  }
+
+  // 頁面載入時還原回饋表單設定
+  window.addEventListener('load', () => {
+    const saved = localStorage.getItem('aixplore_feedback_config');
+    if (saved) {
+      try {
+        const cfg = JSON.parse(saved);
+        if (cfg.formUrl) {
+          document.getElementById('fb-form-url').value = cfg.formUrl;
+          const embedUrl = cfg.formUrl.replace('/viewform','').replace('?usp=dialog','').replace('?usp=sharing','') + '/viewform?embedded=true';
+          document.getElementById('form-iframe').src = embedUrl;
+          document.getElementById('fb-form-share-link').href = cfg.formUrl;
+        }
+        if (cfg.sheetUrl) document.getElementById('fb-response-sheet').value = cfg.sheetUrl;
+      } catch(e) {}
+    }
+  });
+
+
+  // ── 儲存題庫到 Firebase CourseUnits ──
+  async function saveQuizToFirebase() {
+    if (!_fbdb) { toast('Firebase 未連線，無法儲存'); return; }
+
+    // 從三個單元的 table 讀取所有題目
+    const unitIds = ['qt1','qt2','qt3'];
+    const unitNames = ['磁鐵吸什麼','有趣的磁鐵','磁鐵小釣手'];
+    const allUnits = [];
+
+    unitIds.forEach((uid, ui) => {
+      const rows = [];
+      const tbody = document.querySelector(`#${uid} table tbody`);
+      if (!tbody) return;
+      tbody.querySelectorAll('tr').forEach(tr => {
+        const cells = tr.querySelectorAll('td');
+        if (cells.length >= 3) {
+          rows.push({
+            num: cells[0].textContent.trim(),
+            text: cells[1].textContent.trim(),
+            type: cells[2].textContent.trim()
+          });
+        }
+      });
+      allUnits.push({ unitId: uid, unitName: unitNames[ui], questions: rows });
+    });
+
+    try {
+      // 寫入 Firestore CourseUnits 集合（每個單元一個文件）
+      const batch = _fbdb.batch();
+      allUnits.forEach(u => {
+        const ref = _fbdb.collection('CourseUnits').doc(u.unitId);
+        batch.set(ref, {
+          unitId: u.unitId,
+          unitName: u.unitName,
+          questions: u.questions,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      await batch.commit();
+
+      const total = allUnits.reduce((s,u)=>s+u.questions.length,0);
+      toast(`✓ 已儲存 ${total} 道題目到 Firebase！`);
+    } catch(e) {
+      toast('儲存失敗：' + e.message);
+    }
+  }
+
+  // ══════════════════════════════════════════════
+  //  題庫管理 JS（與學生前台 index2 同步）
+  // ══════════════════════════════════════════════
+
+  // 題目資料（與 index2 的 questionBank 完全對應）
+  const quizData = {
+    1: [
+      {
+        text: '下列哪些武器可以被磁鐵盔甲吸住？（可以選很多個喔！）',
+        type: 'multi',
+        opts: ['① 鐵球','② 麻繩','③ 木棍','④ 鋁棒','⑤ 玻璃球','⑥ 鐵斧頭','⑦ 鐵鎚','⑧ 布製斗篷'],
+        correct: [0,5,6],
+        fb_c: '答對了！[停頓0.5秒]鐵球、鐵斧頭和鐵鎚都含有鐵，[停頓0.5秒]所以可以被磁鐵吸住。[停頓1.0秒][強調]義勇的裝備變強了，繼續加油！[/強調]',
+        fb_w: '再想想看！[停頓0.5秒]磁鐵只能吸住含有[強調]「鐵」[/強調]的東西喔。[停頓1.0秒]鋁棒雖然是金屬，[停頓0.5秒]但不含鐵，所以磁鐵吸不住它。'
+      }
+    ],
+    2: [
+      { text: '情況①　圓形磁鐵 S 極朝向你，長條形磁鐵以 N 極靠近，會把圓形磁鐵推開嗎？',
+        type: 'single', opts: ['會推開','不會（互相吸引）'], correct: 1,
+        fb_c: '答對！[停頓0.5秒]N極對S極是[強調]異極[/強調]，異極相吸，所以不會推開。',
+        fb_w: '再想想！[停頓0.5秒]N極對S極是異極，[強調]異極相吸[/強調]，不會推開喔。' },
+      { text: '情況②　圓形磁鐵 S 極朝向你，長條形磁鐵以 S 極靠近，會把圓形磁鐵推開嗎？',
+        type: 'single', opts: ['會推開','不會（互相吸引）'], correct: 0,
+        fb_c: '答對！[停頓0.5秒]S極對S極是[強調]同極[/強調]，同極排斥，所以會推開！',
+        fb_w: '再想想！[停頓0.5秒]S極對S極是同極，[強調]同極排斥[/強調]，會互相推開喔。' },
+      { text: '可以怎麼解釋以上的實驗情形？',
+        type: 'single', opts: ['磁鐵同極性靠近會互相排斥','磁鐵同極性靠近會互相吸引'], correct: 0,
+        fb_c: '太棒了！[停頓0.5秒]記住[強調]「同極排斥、異極相吸」[/強調]，這是磁鐵最重要的特性！',
+        fb_w: '再試試看！[停頓0.5秒]同極靠近時，兩個磁鐵會互相[強調]推開（排斥）[/強調]，不是吸引喔。' },
+      { text: '下列哪一項是利用磁力的生活用品？',
+        type: 'single',
+        opts: ['① 冰箱磁鐵','② 木頭椅子','③ 玻璃杯','④ 塑膠袋'],
+        correct: 0,
+        fb_c: '答對！冰箱磁鐵就是利用磁力吸附在冰箱上的喔！',
+        fb_w: '再想想！木頭、玻璃、塑膠都不含鐵，磁力對它們沒有作用。',
+        fb_o: '' }
+    ],
+    3: [
+      { text: '磁鐵小釣手遊戲是利用磁鐵的什麼特性？',
+        type: 'single',
+        opts: ['① 同極排斥','② 異極相吸','③ 磁鐵會生鏽','④ 磁鐵怕水'],
+        correct: 1,
+        fb_c: '答對！釣魚遊戲就是用異極相吸的原理把圖卡吸起來！',
+        fb_w: '再想想！釣竿和圖卡的磁鐵是不同磁極，異極才會相吸喔！',
+        fb_o: '' },
+      { text: '如果動物圖卡上的磁鐵 S 極朝上，要用長條形磁鐵的哪個磁極才能吸住它？',
+        type: 'single', opts: ['S 極','N 極'], correct: 1,
+        fb_c: '釣到了！[停頓0.5秒]S極朝上，要用[強調]N極[/強調]才能吸住，因為異極相吸！',
+        fb_w: '再試試！[停頓0.5秒]S和S是同極，同極排斥吸不住。[停頓0.5秒]要用[強調]N極[/強調]才能吸住喔。' },
+      { text: '如果動物圖卡上的磁鐵 N 極朝上，要用長條形磁鐵的哪個磁極才能吸住它？',
+        type: 'single', opts: ['S 極','N 極'], correct: 0,
+        fb_c: '太棒了！[停頓0.5秒]N極朝上，要用[強調]S極[/強調]才能吸住，異極相吸！[強調]你完全掌握了！[/強調]',
+        fb_w: '再想想！[停頓0.5秒]N極朝上，要用[強調]S極[/強調]才能吸住，記得異極才能相吸喔。' }
+    ]
+  };
+
+  // 頁面載入時渲染題庫
+  document.addEventListener('DOMContentLoaded', () => {
+    renderAllQuizLists();
+    loadQuizFromFirebase(); // 嘗試從 Firebase 讀取最新題目
+  });
+
+  function renderAllQuizLists() {
+    [1,2,3].forEach(u => renderQuizList(u));
+  }
+
+  function renderQuizList(unitNum) {
+    const container = document.getElementById('qlist-' + unitNum);
+    if (!container) return;
+    const qs = quizData[unitNum] || [];
+    if (qs.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:12px;">目前沒有題目，點下方「新增題目」</div>';
+      return;
+    }
+    container.innerHTML = qs.map((q, i) => buildQItemHtml(unitNum, i, q)).join('');
+  }
+
+  function buildQItemHtml(u, i, q) {
+    const typeOpts = ['multi','single','open'].map(t =>
+      `<option value="${t}" ${q.type===t?'selected':''}>${t==='multi'?'多選題':t==='single'?'單選題':'簡答題'}</option>`
+    ).join('');
+
+    let optsHtml = '';
+    if (q.type !== 'open') {
+      const opts = q.opts || [];
+      optsHtml = `
+        <div class="q-item-label">選項（點 ✓ 設定正確答案）</div>
+        <div class="opts-editor" id="opts-${u}-${i}">
+          ${opts.map((o, oi) => buildOptRow(u, i, oi, o, Array.isArray(q.correct)?q.correct.includes(oi):q.correct===oi)).join('')}
+        </div>
+        <button class="btn-add-opt" onclick="addOpt(${u},${i})">＋ 新增選項</button>`;
+    }
+
+    const kwList = (q.keywords||[]).map((kw,ki) =>
+      `<span class="kw-tag">${kw}<button onclick="removeKw(${u},${i},${ki})">×</button></span>`
+    ).join('');
+
+    const fbPair = q.type === 'open'
+      ? `<div class="q-item-label">🔑 關鍵字（含任一即得分）</div>
+         <div class="kw-wrap" id="kwwrap-${u}-${i}">${kwList}</div>
+         <div class="kw-input-row">
+           <input type="text" id="kwinp-${u}-${i}" placeholder="輸入關鍵字，按 Enter 新增" onkeydown="if(event.key==='Enter'){addKw(${u},${i});event.preventDefault();}">
+           <button class="kw-add-btn" onclick="addKw(${u},${i})">＋ 新增</button>
+         </div>
+         <div class="q-item-label" style="margin-top:10px;">AI 回饋語</div>
+         <div class="fb-pair">
+           <div>
+             <div style="font-size:11px;color:var(--accent2);margin-bottom:4px;">✓ 關鍵字符合時</div>
+             <textarea id="fbc-${u}-${i}" onchange="updateQ(${u},${i})">${q.fb_c||''}</textarea>
+           </div>
+           <div>
+             <div style="font-size:11px;color:var(--accent3);margin-bottom:4px;">✗ 關鍵字不符時</div>
+             <textarea id="fbw-${u}-${i}" onchange="updateQ(${u},${i})">${q.fb_w||''}</textarea>
+           </div>
+         </div>
+         <div class="q-item-label" style="margin-top:6px;">備用回饋語（無設關鍵字時顯示）</div>
+         <textarea id="fbo-${u}-${i}" onchange="updateQ(${u},${i})">${q.fb_o||''}</textarea>`
+      : `<div class="q-item-label">AI 回饋語</div>
+         <div class="fb-pair">
+           <div>
+             <div style="font-size:11px;color:var(--accent2);margin-bottom:4px;">✓ 答對時</div>
+             <textarea id="fbc-${u}-${i}" onchange="updateQ(${u},${i})">${q.fb_c||''}</textarea>
+           </div>
+           <div>
+             <div style="font-size:11px;color:var(--accent3);margin-bottom:4px;">✗ 答錯時</div>
+             <textarea id="fbw-${u}-${i}" onchange="updateQ(${u},${i})">${q.fb_w||''}</textarea>
+           </div>
+         </div>`;
+
+    return `
+      <div class="q-item" id="qitem-${u}-${i}">
+        <div class="q-item-header">
+          <span class="q-item-num">第 ${i+1} 題</span>
+          <select id="qtype-${u}-${i}" onchange="changeType(${u},${i},this.value)">
+            ${typeOpts}
+          </select>
+        </div>
+        <div class="q-item-label">題目文字</div>
+        <textarea id="qtext-${u}-${i}" onchange="updateQ(${u},${i})">${q.text||''}</textarea>
+        ${optsHtml}
+        ${fbPair}
+        <div class="q-item-actions">
+          <button class="btn-small btn-danger" onclick="deleteQ(${u},${i})">刪除題目</button>
+        </div>
+      </div>`;
+  }
+
+  function buildOptRow(u, i, oi, text, isCorrect) {
+    return `<div class="opt-row" id="optrow-${u}-${i}-${oi}">
+      <input type="text" id="opttext-${u}-${i}-${oi}" value="${text.replace(/"/g,'&quot;')}" onchange="updateOpt(${u},${i},${oi})">
+      <button class="opt-correct-btn ${isCorrect?'active':''}" id="optcor-${u}-${i}-${oi}"
+        onclick="toggleCorrect(${u},${i},${oi})" title="設為正確答案">✓</button>
+      <button class="opt-del-btn" onclick="deleteOpt(${u},${i},${oi})" title="刪除選項">✕</button>
+    </div>`;
+  }
+
+  // ── 編輯操作 ──
+  function updateQ(u, i) {
+    const q = quizData[u][i];
+    const txt = document.getElementById('qtext-'+u+'-'+i);
+    if (txt) q.text = txt.value;
+    const fbc = document.getElementById('fbc-'+u+'-'+i);
+    const fbw = document.getElementById('fbw-'+u+'-'+i);
+    const fbo = document.getElementById('fbo-'+u+'-'+i);
+    if (fbc) q.fb_c = fbc.value;
+    if (fbw) q.fb_w = fbw.value;
+    if (fbo) q.fb_o = fbo.value;
+    showSaveBar();
+  }
+
+  function addKw(u, i) {
+    const inp = document.getElementById('kwinp-'+u+'-'+i);
+    if (!inp) return;
+    const kw = inp.value.trim();
+    if (!kw) return;
+    const q = quizData[u][i];
+    if (!q.keywords) q.keywords = [];
+    if (!q.keywords.includes(kw)) q.keywords.push(kw);
+    inp.value = '';
+    // 重新渲染關鍵字列表
+    const wrap = document.getElementById('kwwrap-'+u+'-'+i);
+    if (wrap) wrap.innerHTML = q.keywords.map((k,ki) =>
+      `<span class="kw-tag">${k}<button onclick="removeKw(${u},${i},${ki})">×</button></span>`
+    ).join('');
+    showSaveBar();
+  }
+
+  function removeKw(u, i, ki) {
+    const q = quizData[u][i];
+    if (!q.keywords) return;
+    q.keywords.splice(ki, 1);
+    const wrap = document.getElementById('kwwrap-'+u+'-'+i);
+    if (wrap) wrap.innerHTML = q.keywords.map((k,ki2) =>
+      `<span class="kw-tag">${k}<button onclick="removeKw(${u},${i},${ki2})">×</button></span>`
+    ).join('');
+    showSaveBar();
+  }
+
+  function changeType(u, i, newType) {
+    const q = quizData[u][i];
+    q.type = newType;
+    if (newType === 'open') { q.opts = []; q.correct = null; if(!q.keywords) q.keywords=[]; }
+    else if (!q.opts || q.opts.length === 0) { q.opts = ['選項A','選項B']; q.correct = 0; }
+    renderQuizList(u);
+    showSaveBar();
+  }
+
+  function updateOpt(u, i, oi) {
+    const inp = document.getElementById('opttext-'+u+'-'+i+'-'+oi);
+    if (inp) quizData[u][i].opts[oi] = inp.value;
+    showSaveBar();
+  }
+
+  function toggleCorrect(u, i, oi) {
+    const q = quizData[u][i];
+    if (q.type === 'multi') {
+      if (!Array.isArray(q.correct)) q.correct = [];
+      const idx = q.correct.indexOf(oi);
+      if (idx >= 0) q.correct.splice(idx, 1); else q.correct.push(oi);
+      q.correct.sort();
+    } else {
+      q.correct = oi;
+    }
+    // Update button states
+    q.opts.forEach((_, idx) => {
+      const btn = document.getElementById('optcor-'+u+'-'+i+'-'+idx);
+      if (!btn) return;
+      const active = Array.isArray(q.correct) ? q.correct.includes(idx) : q.correct === idx;
+      btn.classList.toggle('active', active);
+    });
+    showSaveBar();
+  }
+
+  function addOpt(u, i) {
+    const q = quizData[u][i];
+    if (!q.opts) q.opts = [];
+    q.opts.push('新選項');
+    const container = document.getElementById('opts-'+u+'-'+i);
+    if (container) {
+      const oi = q.opts.length - 1;
+      const row = document.createElement('div');
+      row.outerHTML; // dummy
+      container.insertAdjacentHTML('beforeend', buildOptRow(u, i, oi, '新選項', false));
+    }
+    showSaveBar();
+  }
+
+  function deleteOpt(u, i, oi) {
+    const q = quizData[u][i];
+    q.opts.splice(oi, 1);
+    if (Array.isArray(q.correct)) {
+      q.correct = q.correct.filter(c=>c!==oi).map(c=>c>oi?c-1:c);
+    } else if (q.correct === oi) { q.correct = 0; }
+    else if (q.correct > oi) { q.correct--; }
+    renderQuizList(u);
+    showSaveBar();
+  }
+
+  function addQuestion(u) {
+    quizData[u].push({ text:'新題目', type:'single', opts:['選項A','選項B'], correct:0, fb_c:'', fb_w:'' });
+    renderQuizList(u);
+    showSaveBar();
+  }
+
+  function deleteQ(u, i) {
+    if (!confirm('確定刪除這道題目嗎？')) return;
+    quizData[u].splice(i, 1);
+    renderQuizList(u);
+    showSaveBar();
+  }
+
+  // ── 儲存到 Firebase ──
+  async function saveQuizToFirebase() {
+    if (!_fbdb) { toast('Firebase 未連線，無法儲存'); return; }
+
+    // 也把互動說明編輯頁的語音腳本一起存
+    const getTA = id => { const el=document.getElementById(id); return el?el.value:''; };
+
+    const units = [
+      { id:'qt1', name:'磁鐵吸住什麼',
+        intro:    getTA('ct1-intro'),
+        keypoint: getTA('ct1-key'),
+        fb_c:     getTA('ct1-fbc'),
+        fb_w:     getTA('ct1-fbw'),
+        questions: quizData[1] },
+      { id:'qt2', name:'有趣的磁鐵',
+        intro:    getTA('ct2-intro'),
+        keypoint: getTA('ct2-key'),
+        fb_c:     getTA('ct2-fbc'),
+        fb_w:     getTA('ct2-fbw'),
+        questions: quizData[2] },
+      { id:'qt3', name:'磁鐵小釣手',
+        intro:    getTA('ct3-intro'),
+        keypoint: getTA('ct3-key'),
+        fb_c:     getTA('ct3-fbc'),
+        fb_w:     getTA('ct3-fbw'),
+        questions: quizData[3] },
+    ];
+
+    try {
+      const batch = _fbdb.batch();
+      units.forEach(u => {
+        const ref = _fbdb.collection('CourseUnits').doc(u.id);
+        batch.set(ref, {
+          unitId:    u.id,
+          unitName:  u.name,
+          intro:     u.intro,
+          keypoint:  u.keypoint,
+          fb_c:      u.fb_c,
+          fb_w:      u.fb_w,
+          questions: u.questions,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      await batch.commit();
+      const total = units.reduce((s,u)=>s+u.questions.length,0);
+      toast('✓ 已儲存 ' + total + ' 道題目 + 語音腳本到 Firebase！');
+    } catch(e) {
+      toast('儲存失敗：' + e.message);
+    }
+  }
+
+  // ── 從 Firebase 讀取題目（與預設值合併，保留預設的 correct/fb_c/fb_w/fb_o）──
+  async function loadQuizFromFirebase() {
+    if (!_fbdb) return;
+    try {
+      const snap = await _fbdb.collection('CourseUnits').get();
+      if (snap.empty) return;
+      snap.forEach(doc => {
+        const d = doc.data();
+        const key = d.unitId === 'qt1' ? 1 : d.unitId === 'qt2' ? 2 : 3;
+        if (d.questions && d.questions.length) {
+          const defaults = quizData[key] || [];
+          quizData[key] = d.questions.map((q, i) => {
+            const def = defaults[i] || {};
+            // 本地預設優先：Firebase 的 open type 不覆蓋本地的 single/multi
+            const resolvedType = (q.type && q.type !== 'open') ? q.type : (def.type || 'single');
+            const resolvedOpts = (q.opts && q.opts.length && q.type !== 'open') ? q.opts : (def.opts || []);
+            const resolvedCorrect = (q.correct !== undefined && q.correct !== null && q.correct !== '' && q.type !== 'open')
+                                      ? q.correct : (def.correct !== undefined ? def.correct : null);
+            return {
+              text:     q.text    || def.text    || '',
+              type:     resolvedType,
+              opts:     resolvedOpts.length ? resolvedOpts : (def.opts || []),
+              correct:  resolvedCorrect !== null ? resolvedCorrect : def.correct,
+              fb_c:     q.fb_c   || def.fb_c   || '',
+              fb_w:     q.fb_w   || def.fb_w   || '',
+              fb_o:     q.fb_o   || def.fb_o   || '',
+              keywords: (q.keywords && q.keywords.length) ? q.keywords : (def.keywords || [])
+            };
+          });
+        }
+      });
+      renderAllQuizLists();
+    } catch(e) { console.warn('題庫讀取失敗：', e.message); }
+  }
+
+  function reloadStudentFrame() {
+    const f = document.getElementById('student-frame');
+    if (f) { f.src = ''; f.src = 'index2.html'; }
+  }
+
+  function formatText(cmd) { document.execCommand(cmd); }
+
+
+  // ══════════════════════════════════════════
+  //  儀表板 — 從 Firebase 讀取全部數據
+  // ══════════════════════════════════════════
+  async function loadDashboard() {
+    if (!_fbdb) { toast('Firebase 未連線'); return; }
+
+    // 同時讀取三個集合
+    const [usersSnap, scoresSnap, activitiesSnap] = await Promise.all([
+      _fbdb.collection('Users').get().catch(()=>null),
+      _fbdb.collection('Scores').get().catch(()=>null),
+      _fbdb.collection('Activities').orderBy('timestamp','desc').limit(10).get().catch(()=>null),
+    ]);
+    // Answers 集合不再讀取（簡答題已改為選擇題，無複審需求）
+
+    // ── 學生數 ──
+    const totalStudents = usersSnap ? usersSnap.size : 0;
+    document.getElementById('dash-student-count').textContent = totalStudents;
+    document.getElementById('dash-student-sub').textContent = 'Firebase Users 集合';
+
+    // ── 整理分數 Scores ──
+    // allRecords: { sid → { name, records: [{unit, score, maxScore, pct, acc, ts}] } }
+    // completionMap: { sid → { qt1: bool, qt2: bool, qt3: bool } }  用於完成率統計
+    const allRecords = {};
+    const completionMap = {};
+    // scoreMap 保留供完成率/正確率統計用（每單元取最新）
+    const scoreMap = {};
+    if (scoresSnap) {
+      scoresSnap.forEach(doc => {
+        const d = doc.data();
+        if (!d.studentId || !d.unit) return;
+        const sid = String(d.studentId);
+        const isComplete = d.completed === true || (d.score !== undefined && d.score >= 0);
+        const ts = d.updatedAt?.seconds || d.timestamp?.seconds || 0;
+
+        // allRecords：保留每一筆原始記錄
+        if (!allRecords[sid]) allRecords[sid] = { name: d.studentName || sid, records: [] };
+        allRecords[sid].records.push({
+          unit: d.unit, score: d.score||0, maxScore: d.maxScore||0,
+          pct: d.pct||0, acc: d.choiceAccuracy, ts
+        });
+
+        // completionMap：任一筆 completed 就標記
+        if (!completionMap[sid]) completionMap[sid] = { qt1:false, qt2:false, qt3:false };
+        if (isComplete) completionMap[sid][d.unit] = true;
+
+        // scoreMap（最新筆，供正確率統計）
+        if (!scoreMap[sid]) scoreMap[sid] = { name: d.studentName || sid };
+        const ex = scoreMap[sid][d.unit];
+        if (!ex || ts >= (ex._ts||0)) {
+          scoreMap[sid][d.unit] = {
+            score: d.score||0, maxScore: d.maxScore||0, pct: d.pct||0,
+            acc: d.choiceAccuracy !== undefined ? d.choiceAccuracy : null,
+            completed: isComplete, _ts: ts
+          };
+        }
+      });
+    }
+    // 每位學生的 records 按時間排序（新→舊）
+    Object.values(allRecords).forEach(r => r.records.sort((a,b) => b.ts - a.ts));
+
+    // ── 全班完成率（三關全完成） ──
+    const allStudentIds = new Set();
+    if (usersSnap) usersSnap.forEach(doc => allStudentIds.add(doc.id));
+    let allComplete = 0;
+    Object.keys(completionMap).forEach(sid => {
+      const c = completionMap[sid];
+      if (c.qt1 && c.qt2 && c.qt3) allComplete++;
+    });
+    const cRate = totalStudents > 0 ? Math.round(allComplete/totalStudents*100) : 0;
+    document.getElementById('dash-complete-rate').textContent = cRate + '%';
+    document.getElementById('dash-complete-sub').textContent = allComplete + ' / ' + totalStudents + ' 位學生三關全破';
+
+    // ── 平均選擇題正確率 ──
+    let accSum=0, accCount=0;
+    Object.values(scoreMap).forEach(s => {
+      ['qt1','qt2','qt3'].forEach(u => {
+        if (s[u]?.acc !== null && s[u]?.acc !== undefined) { accSum += s[u].acc; accCount++; }
+      });
+    });
+    const avgAcc = accCount>0 ? Math.round(accSum/accCount) : null;
+    document.getElementById('dash-acc-rate').textContent = avgAcc !== null ? avgAcc+'%' : '—';
+    document.getElementById('dash-acc-sub').textContent = accCount>0 ? '基於 '+accCount+' 筆單元記錄' : '尚無數據';
+
+    // ── 各單元完成率 ──
+    const unitNames = { qt1:'⚔️ 單元1・磁鐵吸什麼', qt2:'🧪 單元2・有趣的磁鐵', qt3:'🎣 單元3・磁鐵小釣手' };
+    let unitHtml = '';
+    ['qt1','qt2','qt3'].forEach(u => {
+      const done = Object.values(completionMap).filter(c=>c[u]).length;
+      const pct  = totalStudents>0 ? Math.round(done/totalStudents*100) : 0;
+      unitHtml += `<div class="unit-bar-row">
+        <div class="unit-bar-label">${unitNames[u]}</div>
+        <div class="unit-bar-track"><div class="unit-bar-fill" style="width:${pct}%"></div></div>
+        <div class="unit-bar-pct">${pct}%</div>
+      </div>`;
+    });
+    document.getElementById('dash-unit-progress').innerHTML = unitHtml || '<div class="dash-loading">尚無完成記錄</div>';
+
+    // ── 活動時間軸 ──
+    const typeLabel = { login:'登入', unit_complete:'完成單元', all_complete:'🏆 全關破' };
+    const typeColor = { login:'login', unit_complete:'unit_complete', all_complete:'all_complete' };
+    let tlHtml = '';
+    if (activitiesSnap && !activitiesSnap.empty) {
+      activitiesSnap.forEach(doc => {
+        const d = doc.data();
+        const ts = d.timestamp?.toDate ? d.timestamp.toDate() : new Date();
+        const timeStr = ts.toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+        const lbl = typeLabel[d.type] || d.type;
+        const detail = d.detail ? `・${d.detail}` : '';
+        tlHtml += `<div class="timeline-item-new">
+          <div class="tl-dot ${typeColor[d.type]||'login'}"></div>
+          <div class="tl-body">
+            <div class="tl-title">${d.studentName||d.studentId} ${lbl}${detail}</div>
+            <div class="tl-meta">${timeStr}</div>
+          </div>
+        </div>`;
+      });
+    } else {
+      tlHtml = '<div class="dash-loading">尚無活動記錄</div>';
+    }
+    document.getElementById('dash-timeline').innerHTML = tlHtml;
+
+    // ── 分數總表（預設只顯示最新，可展開歷史）──
+    const sids = Array.from(new Set([...allStudentIds, ...Object.keys(allRecords)]));
+    document.getElementById('dash-score-meta').textContent = sids.length + ' 位學生';
+    if (sids.length === 0) {
+      document.getElementById('dash-score-table').innerHTML = '<div class="dash-loading">尚無分數記錄</div>';
+    } else {
+      let tHtml = `<div style="overflow-x:auto;"><table class="score-table">
+        <thead><tr>
+          <th>姓名</th>
+          <th>單元1</th><th>單元2</th><th>單元3</th>
+          <th>總分</th><th>正確率</th><th>時間</th><th></th>
+        </tr></thead><tbody>`;
+
+      sids.forEach((sid, si) => {
+        const rec  = allRecords[sid];
+        const name = rec?.name || scoreMap[sid]?.name || sid;
+
+        if (!rec || rec.records.length === 0) {
+          tHtml += `<tr>
+            <td style="font-weight:600">${name}</td>
+            <td colspan="7" style="color:var(--text-dim);font-size:12px;">尚未作答</td>
+          </tr>`;
+          return;
+        }
+
+        const byUnit = { qt1:[], qt2:[], qt3:[] };
+        rec.records.forEach(r => { if (byUnit[r.unit]) byUnit[r.unit].push(r); });
+        const maxRows = Math.max(byUnit.qt1.length, byUnit.qt2.length, byUnit.qt3.length);
+
+        const fmtPill = (r) => {
+          if (!r) return '<span style="color:var(--text-dim)">—</span>';
+          const cls = r.pct>=80?'sp-high':r.pct>=50?'sp-mid':'sp-low';
+          return `<span class="score-pill-sm ${cls}">${r.score}/${r.maxScore}</span>`;
+        };
+        const buildRow = (attempt, hideClass) => {
+          const r1 = byUnit.qt1[attempt], r2 = byUnit.qt2[attempt], r3 = byUnit.qt3[attempt];
+          const total  = (r1?.score||0)+(r2?.score||0)+(r3?.score||0);
+          const maxT   = (r1?.maxScore||0)+(r2?.maxScore||0)+(r3?.maxScore||0);
+          const accs   = [r1?.acc,r2?.acc,r3?.acc].filter(x=>x!==null&&x!==undefined);
+          const avgA   = accs.length>0 ? Math.round(accs.reduce((a,b)=>a+b,0)/accs.length) : null;
+          const accCls = avgA===null?'sp-pend':avgA>=80?'sp-high':avgA>=50?'sp-mid':'sp-low';
+          const ts     = Math.max(r1?.ts||0, r2?.ts||0, r3?.ts||0);
+          const timeStr = ts>0 ? new Date(ts*1000).toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+          const isLatest = attempt === 0;
+          return `<tr class="${hideClass}" style="${!isLatest?'background:rgba(120,150,168,.04);':''}">
+            <td style="font-weight:600;${!isLatest?'color:var(--text-dim);font-size:12px;padding-left:24px;':''}">${isLatest ? name : '第 '+(maxRows-attempt)+' 次'}</td>
+            <td>${fmtPill(r1)}</td><td>${fmtPill(r2)}</td><td>${fmtPill(r3)}</td>
+            <td><strong>${maxT>0?total+'/'+maxT:'—'}</strong></td>
+            <td><span class="score-pill-sm ${accCls}">${avgA!==null?avgA+'%':'—'}</span></td>
+            <td style="font-size:11px;color:var(--text-dim);">${timeStr}</td>
+            ${isLatest ? `<td style="white-space:nowrap;">${maxRows>1
+              ? `<button onclick="toggleHistory(this,'hist-${si}')" style="background:none;border:1px solid var(--border);border-radius:5px;padding:3px 9px;font-size:11px;font-family:inherit;color:var(--text-muted);cursor:pointer;" data-open="0">▸ ${maxRows-1} 筆歷史</button>`
+              : '<span style="font-size:11px;color:var(--text-dim);">首次</span>'}</td>`
+            : '<td></td>'}
+          </tr>`;
+        };
+
+        // 最新一筆（永遠顯示）
+        tHtml += buildRow(0, '');
+        // 歷史筆（預設隱藏）
+        for (let i = 1; i < maxRows; i++) {
+          tHtml += buildRow(i, `hist-${si} hist-row`);
+        }
+      });
+
+      tHtml += '</tbody></table></div>';
+      document.getElementById('dash-score-table').innerHTML = tHtml;
+      // 預設隱藏所有歷史列
+      document.querySelectorAll('.hist-row').forEach(r => r.style.display = 'none');
+    }
+
+    // 簡答題複審清單已移除（所有題目改為選擇題）
+  }
+
+  // adjustScore 已移除（簡答題已改為選擇題）
+
+  // ── 強制推送最新題目到 Firebase（覆蓋舊資料）──
+  async function forcePushToFirebase() {
+    if (!_fbdb) { toast('Firebase 未連線'); return; }
+    if (!confirm('確定要把目前後台的所有題目強制推送到 Firebase 嗎？\n學生端重新整理後即可看到最新題目。')) return;
+
+    const statusEl = document.getElementById('autofill-status');
+    statusEl.textContent = '⏳ 推送中…'; statusEl.style.color = 'var(--accent)';
+
+    try {
+      const batch = _fbdb.batch();
+      [
+        { id:'qt1', uNum:1, name:'磁鐵吸住什麼' },
+        { id:'qt2', uNum:2, name:'有趣的磁鐵' },
+        { id:'qt3', uNum:3, name:'磁鐵小釣手' },
+      ].forEach(({ id, uNum, name }) => {
+        const ref = _fbdb.collection('CourseUnits').doc(id);
+        const qs  = (quizData[uNum] || []).map(q => ({
+          text:    q.text    || '',
+          type:    q.type    || 'single',
+          opts:    q.opts    || [],
+          correct: q.correct !== undefined ? q.correct : null,
+          fb_c:    q.fb_c   || '',
+          fb_w:    q.fb_w   || '',
+          fb_o:    q.fb_o   || '',
+          keywords: q.keywords || []
+        }));
+        batch.set(ref, {
+          unitId:    id,
+          unitName:  name,
+          questions: qs,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      });
+      await batch.commit();
+      const total = [1,2,3].reduce((s,u) => s + (quizData[u]||[]).length, 0);
+      statusEl.textContent = `✓ 已推送 ${total} 道題目，學生重新整理即生效`;
+      statusEl.style.color = 'var(--accent2)';
+      toast('✓ 題目已強制推送到 Firebase！');
+    } catch(e) {
+      statusEl.textContent = '⚠ 推送失敗：' + e.message;
+      statusEl.style.color = 'var(--accent3)';
+      toast('推送失敗：' + e.message);
+    }
+  }
+
+  // ── 展開/收合歷史作答記錄 ──
+  function toggleHistory(btn, cls) {
+    const rows = document.querySelectorAll('.' + cls + '.hist-row');
+    const isOpen = btn.dataset.open === '1';
+    rows.forEach(r => r.style.display = isOpen ? 'none' : '');
+    btn.dataset.open = isOpen ? '0' : '1';
+    const count = rows.length;
+    btn.textContent = isOpen ? `▸ ${count} 筆歷史` : `▾ 收合`;
+  }
+
+  // 進入儀表板頁面時自動讀取
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(loadDashboard, 800);
+  });
+
+</script>
+</body>
+</html>

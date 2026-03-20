@@ -1,0 +1,1423 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>磁鐵大冒險・AIXplore</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Fredoka+One&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+/* ══ 摩蘭迪色系（與老師後台一致）══ */
+:root {
+  --bg:       #edeef0;
+  --surface:  #f5f5f4;
+  --surface2: #ebebea;
+  --border:   #d8d9db;
+
+  --accent:   #7896a8;   /* 藍灰 — 主色 */
+  --accent2:  #8aaa8e;   /* 灰綠 — 答對 */
+  --accent3:  #b08a84;   /* 玫瑰灰 — 答錯 */
+  --accent4:  #9096a8;   /* 藍紫灰 — AI */
+  --accentY:  #b8a86a;   /* 暖金 — 分數 */
+
+  --text:     #3a3d42;
+  --text-m:   #7b8087;
+  --text-d:   #adb0b5;
+
+  --correct-bg:  rgba(138,170,142,.13);
+  --correct-bd:  rgba(138,170,142,.45);
+  --correct-txt: #3d6b42;
+  --wrong-bg:    rgba(176,138,132,.10);
+  --wrong-bd:    rgba(176,138,132,.40);
+  --wrong-txt:   #7a4840;
+  --open-bg:     rgba(120,150,168,.10);
+  --open-bd:     rgba(120,150,168,.38);
+  --open-txt:    #3a5a70;
+
+  --radius: 10px;
+  --shadow: 0 2px 14px rgba(100,110,120,.10);
+  --shadow-md: 0 4px 24px rgba(100,110,120,.14);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Noto Sans TC', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* 細格紋背景（與後台一致） */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(120,150,168,.05) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(120,150,168,.05) 40px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ══ 登入 ══ */
+#login-screen {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  position: relative; z-index: 1;
+}
+
+.login-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 52px 44px 44px;
+  width: 100%; max-width: 420px;
+  box-shadow: var(--shadow-md);
+  animation: fadeUp .5s ease both;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.hero { text-align: center; margin-bottom: 40px; }
+.hero-icon-wrap {
+  display: inline-block;
+  font-size: 72px; line-height: 1;
+  margin-bottom: 14px;
+  animation: floatY 3s ease-in-out infinite;
+}
+@keyframes floatY {
+  0%,100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+.hero-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: 34px;
+  color: var(--accent);
+  letter-spacing: .5px;
+}
+.hero-sub { font-size: 12px; color: var(--text-m); margin-top: 6px; font-weight: 500; }
+
+.fl { margin-bottom: 18px; }
+.fl label {
+  display: block; font-size: 13px; color: var(--text-m);
+  font-weight: 700; margin-bottom: 8px;
+}
+.fl input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-family: inherit; font-size: 15px; color: var(--text);
+  outline: none;
+  transition: border-color .2s, box-shadow .2s;
+}
+.fl input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(120,150,168,.18);
+}
+
+.btn-go {
+  width: 100%;
+  background: var(--accent);
+  color: #f5f5f4;
+  border: none; border-radius: var(--radius);
+  padding: 15px;
+  font-family: 'Fredoka One', cursive; font-size: 20px;
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(60,80,100,.25);
+  transition: opacity .15s, transform .1s, box-shadow .1s;
+  margin-top: 4px;
+}
+.btn-go:hover  { opacity: .9; }
+.btn-go:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(60,80,100,.2); }
+
+#login-msg { text-align: center; margin-top: 14px; font-size: 13px; min-height: 20px; font-weight: 500; }
+
+/* ══ 主畫面 ══ */
+#main-screen { display: none; position: relative; z-index: 1; }
+
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px; height: 60px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 1px 8px rgba(100,110,120,.07);
+}
+.topbar-logo {
+  font-family: 'Fredoka One', cursive;
+  font-size: 22px; color: var(--accent);
+  display: flex; align-items: center; gap: 8px;
+}
+#student-info {
+  font-size: 13px; color: var(--text-m); font-weight: 600;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px; padding: 5px 14px;
+}
+
+/* 分數徽章 in topbar */
+#score-badge {
+  display: none;
+  align-items: center; gap: 6px;
+  background: rgba(184,168,106,.12);
+  border: 1px solid rgba(184,168,106,.35);
+  border-radius: 20px; padding: 5px 14px;
+  font-size: 13px; font-weight: 700; color: var(--accentY);
+}
+
+.unit-nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; padding: 0 16px; overflow-x: auto; gap: 2px;
+}
+.unit-tab {
+  padding: 15px 22px; font-size: 13px; font-weight: 700;
+  color: var(--text-m); cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap; transition: all .15s;
+}
+.unit-tab:hover { color: var(--accent); }
+.unit-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.unit-tab.done   { color: var(--accent2); }
+.unit-tab.done::after { content: ' ✓'; font-size: 11px; }
+
+/* 進度條 */
+.prog-section { padding: 18px 20px 0; max-width: 760px; margin: 0 auto; }
+.prog-header {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; color: var(--text-m); font-weight: 700;
+  margin-bottom: 8px;
+}
+.prog-wrap {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px; height: 10px; overflow: hidden;
+  margin-bottom: 20px;
+}
+.prog-fill {
+  height: 100%; border-radius: 20px;
+  background: linear-gradient(90deg, var(--accent2), #a8ccac);
+  transition: width .8s cubic-bezier(.34,1.3,.64,1);
+  width: 0%;
+}
+
+.main-wrap { max-width: 760px; margin: 0 auto; padding: 0 20px 100px; }
+
+/* ══ 分數總覽列 ══ */
+.score-bar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  display: flex; align-items: center; gap: 14px;
+  box-shadow: var(--shadow);
+}
+.score-bar-label { font-size: 12px; color: var(--text-m); font-weight: 700; flex-shrink: 0; }
+.score-dots { display: flex; gap: 7px; flex: 1; flex-wrap: wrap; }
+.sdot {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--surface2); border: 1.5px solid var(--border);
+  transition: all .3s;
+  flex-shrink: 0;
+}
+.sdot.c { background: var(--accent2); border-color: var(--accent2); box-shadow: 0 0 6px rgba(138,170,142,.5); }
+.sdot.w { background: var(--accent3); border-color: var(--accent3); }
+.sdot.o { background: var(--accent);  border-color: var(--accent); }
+.score-num {
+  font-family: 'Fredoka One', cursive;
+  font-size: 18px; color: var(--accentY);
+  flex-shrink: 0; min-width: 60px; text-align: right;
+}
+
+/* ══ AI 泡泡 ══ */
+.ai-bubble {
+  display: flex; gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  border-top-left-radius: 2px;
+  padding: 20px 22px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+  position: relative; overflow: hidden;
+}
+.ai-bubble::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--accent4), var(--accent));
+}
+.ai-ava {
+  width: 48px; height: 48px; flex-shrink: 0;
+  background: rgba(144,150,168,.15);
+  border: 1.5px solid rgba(144,150,168,.3);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+}
+.ai-name {
+  font-size: 10px; color: var(--accent4); font-weight: 900;
+  letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 8px;
+}
+.ai-text { font-size: 15px; line-height: 1.85; color: var(--text); }
+.ai-text strong { color: var(--accent); font-weight: 900; }
+
+.study-card {
+  background: rgba(120,150,168,.07);
+  border: 1px solid rgba(120,150,168,.2);
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 13px; line-height: 1.85; color: var(--text-m);
+  margin-top: 12px;
+}
+.study-card strong { color: var(--accent4); font-weight: 800; }
+
+.ai-btns { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.btn-speak {
+  background: rgba(120,150,168,.1);
+  border: 1px solid rgba(120,150,168,.28);
+  border-radius: 20px; padding: 7px 16px;
+  font-size: 12px; font-weight: 700; color: var(--accent4);
+  cursor: pointer; font-family: inherit;
+  transition: all .15s;
+}
+.btn-speak:hover { background: var(--accent4); color: #f5f5f4; }
+.btn-speak.green {
+  background: rgba(138,170,142,.1);
+  border-color: rgba(138,170,142,.3); color: #4e7a55;
+}
+.btn-speak.green:hover { background: var(--accent2); color: #f5f5f4; }
+
+/* ══ 題目卡 ══ */
+.q-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px 22px 20px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow);
+  animation: cardIn .35s ease both;
+  transition: border-color .3s;
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.q-card.ac { border-color: rgba(138,170,142,.5); background: rgba(138,170,142,.03); }
+.q-card.aw { border-color: rgba(176,138,132,.4); }
+.q-card.ao { border-color: rgba(120,150,168,.38); }
+
+.q-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.q-num {
+  background: var(--accent);
+  color: #f5f5f4;
+  font-family: 'Fredoka One', cursive; font-size: 15px;
+  border-radius: 7px; padding: 3px 12px; flex-shrink: 0;
+}
+.q-type-tag {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 2px 10px;
+  font-size: 11px; color: var(--text-m); font-weight: 700;
+}
+.q-type-tag.multi  { background: rgba(176,138,132,.12); border-color: rgba(176,138,132,.3); color: #7a4840; }
+.q-type-tag.single { background: rgba(120,150,168,.12); border-color: rgba(120,150,168,.3); color: #3a5a70; }
+.q-type-tag.open   { background: rgba(138,170,142,.12); border-color: rgba(138,170,142,.3); color: #3d6b42; }
+
+/* 分值標示 */
+.q-pts {
+  margin-left: auto;
+  font-size: 12px; font-weight: 700;
+  color: var(--accentY);
+  background: rgba(184,168,106,.1);
+  border: 1px solid rgba(184,168,106,.28);
+  border-radius: 6px; padding: 2px 10px;
+  flex-shrink: 0;
+}
+
+.q-text { font-size: 16px; line-height: 1.8; margin-bottom: 18px; font-weight: 600; color: var(--text); }
+.q-text strong { color: var(--accent); }
+
+/* ══ 選項 ══ */
+.opts-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; margin-bottom: 16px; }
+.opts-col  { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+
+.opt {
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 13px 18px;
+  font-size: 14px; cursor: pointer;
+  text-align: left; font-family: inherit; font-weight: 600;
+  color: var(--text); transition: all .15s;
+  position: relative;
+}
+.opt:hover { border-color: var(--accent); color: var(--accent); background: rgba(120,150,168,.07); }
+
+.opt.sel {
+  background: rgba(120,150,168,.12);
+  border-color: var(--accent); color: var(--accent);
+}
+.opt.sel::after {
+  content: '✓'; position: absolute; right: 14px; top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px; color: var(--accent); font-weight: 900;
+}
+
+.opt.correct {
+  background: var(--correct-bg);
+  border-color: rgba(138,170,142,.6);
+  color: var(--correct-txt); cursor: default;
+  animation: popIn .3s cubic-bezier(.34,1.4,.64,1) both;
+}
+.opt.correct::after {
+  content: '✓'; position: absolute; right: 14px; top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px; color: var(--accent2); font-weight: 900;
+}
+.opt.wrong {
+  background: var(--wrong-bg);
+  border-color: rgba(176,138,132,.5);
+  color: var(--wrong-txt); cursor: default;
+  animation: shake .4s ease both;
+}
+.opt.wrong::after {
+  content: '✗'; position: absolute; right: 14px; top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px; color: var(--accent3); font-weight: 900;
+}
+
+@keyframes popIn {
+  0%   { transform: scale(.94); }
+  60%  { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20%     { transform: translateX(-5px); }
+  40%     { transform: translateX(5px); }
+  60%     { transform: translateX(-3px); }
+  80%     { transform: translateX(3px); }
+}
+
+/* ══ 簡答 ══ */
+.open-hint { font-size: 12px; color: var(--text-d); margin-bottom: 10px; font-weight: 600; }
+.ans-ta {
+  width: 100%; min-height: 96px;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-family: inherit; font-size: 14px; color: var(--text);
+  resize: vertical; outline: none; margin-bottom: 14px; line-height: 1.7;
+  transition: border-color .2s, box-shadow .2s;
+}
+.ans-ta:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(120,150,168,.15); }
+.ans-ta:disabled { opacity: .65; background: rgba(138,170,142,.08); border-color: rgba(138,170,142,.35); }
+
+/* ══ 按鈕 ══ */
+.btn-ok {
+  background: var(--accent);
+  color: #f5f5f4; border: none;
+  border-radius: 8px; padding: 12px 28px;
+  font-family: 'Fredoka One', cursive; font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(60,90,110,.3);
+  transition: opacity .15s, transform .1s, box-shadow .1s;
+}
+.btn-ok:hover  { opacity: .9; }
+.btn-ok:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(60,90,110,.2); }
+
+/* ══ 回饋框 ══ */
+.fb-box {
+  border-radius: 8px; padding: 0 16px;
+  font-size: 14px; line-height: 1.7;
+  margin-top: 16px; display: none; overflow: hidden;
+}
+.fb-box.show {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 14px 16px;
+  animation: fbIn .3s ease both;
+}
+@keyframes fbIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fb-box.correct { background: var(--correct-bg); border: 1.5px solid var(--correct-bd); color: var(--correct-txt); }
+.fb-box.wrong   { background: var(--wrong-bg);   border: 1.5px solid var(--wrong-bd);   color: var(--wrong-txt); }
+.fb-box.open    { background: var(--open-bg);    border: 1.5px solid var(--open-bd);    color: var(--open-txt); }
+.fb-icon { font-size: 22px; flex-shrink: 0; }
+.fb-text { font-weight: 600; font-size: 14px; line-height: 1.7; }
+.fb-text strong { font-weight: 900; }
+
+/* 得分貼紙 */
+.pts-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(184,168,106,.15);
+  border: 1px solid rgba(184,168,106,.35);
+  border-radius: 20px; padding: 3px 12px;
+  font-size: 13px; font-weight: 700; color: var(--accentY);
+  margin-top: 8px;
+  animation: popIn .4s .1s cubic-bezier(.34,1.4,.64,1) both;
+}
+
+/* ══ 單元完成結算卡 ══ */
+.unit-result-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px 28px;
+  margin-top: 24px;
+  box-shadow: var(--shadow-md);
+  text-align: center;
+  animation: fadeUp .5s ease both;
+}
+.unit-result-title { font-family: 'Fredoka One', cursive; font-size: 22px; color: var(--accent2); margin-bottom: 6px; }
+.unit-result-sub   { font-size: 13px; color: var(--text-m); margin-bottom: 20px; }
+.score-display {
+  display: inline-flex; flex-direction: column; align-items: center;
+  background: rgba(184,168,106,.08);
+  border: 1.5px solid rgba(184,168,106,.28);
+  border-radius: 12px; padding: 18px 36px;
+  margin-bottom: 20px;
+}
+.score-big {
+  font-family: 'Fredoka One', cursive;
+  font-size: 52px; color: var(--accentY); line-height: 1;
+}
+.score-label { font-size: 12px; color: var(--text-m); font-weight: 700; margin-top: 4px; }
+
+.score-breakdown {
+  display: flex; justify-content: center; gap: 20px;
+  font-size: 13px; color: var(--text-m); font-weight: 600;
+  margin-bottom: 24px; flex-wrap: wrap;
+}
+.sb-item { display: flex; align-items: center; gap: 6px; }
+.sb-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+.btn-next {
+  display: block; width: 100%;
+  background: var(--accent2);
+  color: #f5f5f4; border: none;
+  border-radius: 10px; padding: 16px;
+  font-family: 'Fredoka One', cursive; font-size: 19px;
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(50,90,55,.3);
+  transition: opacity .15s, transform .1s, box-shadow .1s;
+  margin-top: 4px;
+}
+.btn-next:hover  { opacity: .9; }
+.btn-next:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(50,90,55,.2); }
+
+/* 全部完成 */
+.done-wrap { text-align: center; padding: 52px 24px; animation: fadeUp .5s ease both; }
+.done-icon { font-size: 88px; display: block; margin-bottom: 18px; animation: doneIn .7s cubic-bezier(.34,1.4,.64,1) both; }
+@keyframes doneIn {
+  from { transform: scale(0) rotate(-15deg); opacity: 0; }
+  to   { transform: scale(1) rotate(0); opacity: 1; }
+}
+.done-title { font-family: 'Fredoka One', cursive; font-size: 32px; color: var(--accent2); margin-bottom: 10px; }
+.done-sub   { font-size: 15px; color: var(--text-m); line-height: 2; font-weight: 600; }
+.done-sub strong { color: var(--accent); }
+
+/* 最終總分 */
+.final-score {
+  display: inline-flex; flex-direction: column; align-items: center;
+  background: rgba(184,168,106,.1);
+  border: 1.5px solid rgba(184,168,106,.3);
+  border-radius: 14px; padding: 22px 48px;
+  margin: 24px 0;
+}
+.final-score-big { font-family: 'Fredoka One', cursive; font-size: 64px; color: var(--accentY); line-height: 1; }
+.final-score-lbl { font-size: 13px; color: var(--text-m); font-weight: 700; margin-top: 6px; }
+
+/* ══ 星星 ══ */
+#stars { position: fixed; inset: 0; pointer-events: none; z-index: 999; display: none; }
+.star  { position: absolute; border-radius: 50%; animation: starFall 1.6s ease-out forwards; }
+@keyframes starFall {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(80vh) scale(.2); }
+}
+
+/* RWD */
+@media (max-width: 540px) {
+  .opts-grid { grid-template-columns: 1fr; }
+  .login-wrap { padding: 40px 24px 32px; }
+  .q-text { font-size: 15px; }
+  .topbar { padding: 0 16px; }
+  .score-big { font-size: 40px; }
+  .final-score-big { font-size: 50px; }
+}
+
+</style>
+</head>
+<body>
+
+<div id="stars"></div>
+
+<!-- ══ 登入 ══ -->
+<div id="login-screen">
+  <div class="login-wrap">
+    <div class="hero">
+      <div class="hero-icon-wrap">🧲</div>
+      <div class="hero-title">磁鐵大冒險</div>
+      <div class="hero-sub">3上自然科學・單元4・AIXplore</div>
+    </div>
+    <div class="fl">
+      <label>👤 你的姓名</label>
+      <input type="text" id="inp-name" placeholder="輸入姓名" maxlength="10" autocomplete="off">
+    </div>
+    <div class="fl">
+      <label>🔢 學號</label>
+      <input type="text" id="inp-sid" placeholder="輸入學號" maxlength="20"
+        onkeydown="if(event.key==='Enter')doLogin()" autocomplete="off">
+    </div>
+    <button class="btn-go" onclick="doLogin()">出發冒險 🚀</button>
+    <div id="login-msg"></div>
+  </div>
+</div>
+
+<!-- ══ 主畫面 ══ -->
+<div id="main-screen">
+  <div class="topbar">
+    <div class="topbar-logo">🧲 磁鐵大冒險</div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <div id="score-badge">🏅 <span id="badge-score">0</span> 分</div>
+      <div id="student-info"></div>
+    </div>
+  </div>
+  <div class="unit-nav">
+    <div class="unit-tab active" id="nav-1" onclick="goUnit(1)">⚔️ 單元1・磁鐵吸什麼</div>
+    <div class="unit-tab"        id="nav-2" onclick="goUnit(2)">🧪 單元2・有趣的磁鐵</div>
+    <div class="unit-tab"        id="nav-3" onclick="goUnit(3)">🎣 單元3・磁鐵小釣手</div>
+  </div>
+  <div class="prog-section">
+    <div class="prog-header">
+      <span>🗺️ 冒險進度</span>
+      <span id="prog-text">0 / 3 關卡完成</span>
+    </div>
+    <div class="prog-wrap"><div class="prog-fill" id="prog-fill"></div></div>
+  </div>
+  <div class="main-wrap"><div id="unit-area"></div></div>
+</div>
+
+<script>
+// ══════════════════════════════════════════
+//  磁鐵大冒險  學生前台 v3（摩蘭迪 + 評分）
+// ══════════════════════════════════════════
+
+// ── Firebase ──
+const firebaseConfig = {
+  apiKey: "AIzaSyBvTrA2GosSz7qumSilK6rw5QuoAZRjx64",
+  authDomain: "xrtest-1d213.firebaseapp.com",
+  projectId: "xrtest-1d213",
+  storageBucket: "xrtest-1d213.firebasestorage.app",
+  messagingSenderId: "65645917782",
+  appId: "1:65645917782:web:a23de60c3ae165e2222df7"
+};
+let db = null;
+try { firebase.initializeApp(firebaseConfig); db = firebase.firestore(); }
+catch(e) { console.warn('Firebase 離線：', e.message); }
+
+// ── 狀態 ──
+let student   = { name:'', sid:'' };
+let curUnit   = 1;
+let courseData = {};
+const unitDone = { 1:false, 2:false, 3:false };
+const answered = {};   // qid → { correct: true/false/null, pts: n }
+
+// ── 評分設定 ──
+// 每題配分（可在後台調整，預設每題 10 分，簡答題送出即得 5 分）
+const PTS_CORRECT = 1;    // 選擇題答對得分
+const PTS_OPEN    = 1;    // 簡答題送出得分（鼓勵分）
+const PTS_WRONG   = 0;    // 答錯得分
+
+let totalScore   = 0;     // 累計得分
+let maxScore     = 0;     // 滿分（動態計算）
+
+// ── 預設題目 ──
+const defaultUnits = {
+  qt1: {
+    unitId:'qt1', unitName:'磁鐵吸住什麼',
+    intro:   '同學們好！[停頓0.5秒]今天勇者義勇要去熔岩火山討伐大魔王，[停頓0.5秒]他穿上了磁鐵製成的盔甲！[停頓1.0秒]你能幫他找出路上哪些武器可以被磁鐵吸住嗎？',
+    keypoint:'磁鐵可以吸住含有[強調]「鐵」[/強調]的物品，[停頓0.5秒]例如：鐵球、鐵斧頭、鐵鎚。[停頓1.0秒]記住：[強調]不是所有金屬都能被磁鐵吸住喔！[/強調]鋁就不行。',
+    questions:[{ text:'下列哪些武器可以被磁鐵盔甲吸住？（可以選很多個喔！）', type:'多選題' }]
+  },
+  qt2: {
+    unitId:'qt2', unitName:'有趣的磁鐵',
+    intro:   '現在我們來認識磁鐵有趣的特性！[停頓0.5秒]磁鐵有兩個磁極，分別叫做[強調]N極[/強調]和[強調]S極[/強調]。[停頓1.0秒]當兩塊磁鐵靠近時，有時候會互相吸引，有時候會互相推開。',
+    keypoint:'磁鐵有[強調]N極[/強調]和[強調]S極[/強調]兩個磁極。[停頓0.5秒]同極靠近 → 互相排斥。[停頓0.5秒]異極靠近 → 互相吸引。[停頓0.5秒]口訣：[強調]同極排斥、異極相吸[/強調]。',
+    questions:[
+      { text:'情況①　圓形磁鐵 S 極朝向你，長條形磁鐵以 N 極靠近，會把圓形磁鐵推開嗎？', type:'單選題' },
+      { text:'情況②　圓形磁鐵 S 極朝向你，長條形磁鐵以 S 極靠近，會把圓形磁鐵推開嗎？', type:'單選題' },
+      { text:'可以怎麼解釋以上的實驗情形？', type:'單選題' },
+      { text:'下列哪一項是利用磁力的生活用品？', type:'單選題' }
+    ]
+  },
+  qt3: {
+    unitId:'qt3', unitName:'磁鐵小釣手',
+    intro:   '現在我們要來玩[強調]磁鐵小釣手遊戲[/強調]！[停頓1.0秒]我們用長條形磁鐵做成釣竿，釣起貼有圓形磁鐵的生物圖卡。[停頓0.5秒]想想看，要用哪個磁極才能釣起它？',
+    keypoint:'釣魚原理（[強調]異極相吸[/強調]）：[停頓0.5秒]如果圖卡的磁鐵[強調]S極朝上[/強調]→ 用[強調]N極[/強調]才能吸住。[停頓0.5秒]如果圖卡的磁鐵[強調]N極朝上[/強調]→ 用[強調]S極[/強調]才能吸住。',
+    questions:[
+      { text:'磁鐵小釣手遊戲是利用磁鐵的什麼特性？', type:'單選題' },
+      { text:'如果動物圖卡上的磁鐵 S 極朝上，要用長條形磁鐵的哪個磁極才能吸住它？', type:'單選題' },
+      { text:'如果動物圖卡上的磁鐵 N 極朝上，要用長條形磁鐵的哪個磁極才能吸住它？', type:'單選題' }
+    ]
+  }
+};
+
+const questionBank = {
+  u1q0:{ type:'multi', opts:['① 鐵球','② 麻繩','③ 木棍','④ 鋁棒','⑤ 玻璃球','⑥ 鐵斧頭','⑦ 鐵鎚','⑧ 布製斗篷'],
+    correct:[0,5,6],
+    fb_c:'答對了！[停頓0.5秒]鐵球、鐵斧頭和鐵鎚都含有鐵，[停頓0.5秒]所以可以被磁鐵吸住。[停頓1.0秒][強調]義勇的裝備變強了，繼續加油！[/強調]',
+    fb_w:'再想想看！[停頓0.5秒]磁鐵只能吸住含有[強調]「鐵」[/強調]的東西喔。[停頓1.0秒]鋁棒雖然是金屬，但不含鐵，所以磁鐵吸不住它。' },
+  u2q0:{ type:'single', opts:['會推開','不會（互相吸引）'], correct:1,
+    fb_c:'答對！[停頓0.5秒]N極對S極是[強調]異極[/強調]，異極相吸，所以不會推開。',
+    fb_w:'再想想！[停頓0.5秒]N極對S極是異極，[強調]異極相吸[/強調]，不會推開喔。' },
+  u2q1:{ type:'single', opts:['會推開','不會（互相吸引）'], correct:0,
+    fb_c:'答對！[停頓0.5秒]S極對S極是[強調]同極[/強調]，同極排斥，所以會推開！',
+    fb_w:'再想想！[停頓0.5秒]S極對S極是同極，[強調]同極排斥[/強調]，會互相推開喔。' },
+  u2q2:{ type:'single', opts:['磁鐵同極性靠近會互相排斥','磁鐵同極性靠近會互相吸引'], correct:0,
+    fb_c:'太棒了！[停頓0.5秒]記住[強調]「同極排斥、異極相吸」[/強調]，這是磁鐵最重要的特性！',
+    fb_w:'再試試看！[停頓0.5秒]同極靠近時，兩個磁鐵會互相[強調]推開（排斥）[/強調]，不是吸引喔。' },
+  u2q3:{ type:'single',
+    opts:['① 冰箱磁鐵','② 木頭椅子','③ 玻璃杯','④ 塑膠袋'],
+    correct:0,
+    fb_c:'答對！[停頓0.5秒]冰箱磁鐵就是利用[強調]磁力[/強調]吸附在冰箱上的喔！',
+    fb_w:'再想想！[停頓0.5秒]木頭、玻璃、塑膠都不含鐵，[強調]磁力[/強調]對它們沒有作用。' },
+  u3q0:{ type:'single',
+    opts:['① 同極排斥','② 異極相吸','③ 磁鐵會生鏽','④ 磁鐵怕水'],
+    correct:1,
+    fb_c:'答對！[停頓0.5秒]釣魚遊戲就是用[強調]異極相吸[/強調]的原理把圖卡吸起來！',
+    fb_w:'再想想！[停頓0.5秒]釣竿和圖卡的磁鐵是不同磁極，[強調]異極[/強調]才會相吸喔！' },
+  u3q1:{ type:'single', opts:['S 極','N 極'], correct:1,
+    fb_c:'釣到了！[停頓0.5秒]S極朝上，要用[強調]N極[/強調]才能吸住，因為異極相吸！',
+    fb_w:'再試試！[停頓0.5秒]S和S是同極，同極排斥吸不住。[停頓0.5秒]要用[強調]N極[/強調]才能吸住喔。' },
+  u3q2:{ type:'single', opts:['S 極','N 極'], correct:0,
+    fb_c:'太棒了！[停頓0.5秒]N極朝上，要用[強調]S極[/強調]才能吸住，[強調]異極相吸！你完全掌握了！[/強調]',
+    fb_w:'再想想！[停頓0.5秒]N極朝上，要用[強調]S極[/強調]才能吸住，記得異極才能相吸喔。' }
+};
+
+// ── 計算滿分 ──
+function calcMaxScore() {
+  let m = 0;
+  [1,2,3].forEach(u => {
+    const data = courseData['qt'+u] || defaultUnits['qt'+u];
+    if (!data || !data.questions) return;
+    data.questions.forEach((q,i) => {
+      const bank = questionBank['u'+u+'q'+i] || {};
+      const type = bank.type || 'open';
+      m += (type === 'open') ? PTS_OPEN : PTS_CORRECT;
+    });
+  });
+  maxScore = m;
+}
+
+function updateScoreBadge() {
+  const badge = document.getElementById('score-badge');
+  const sp    = document.getElementById('badge-score');
+  if (!badge || !sp) return;
+  badge.style.display = 'flex';
+  sp.textContent = totalScore;
+}
+
+// ── 登入 ──
+async function doLogin() {
+  const name = document.getElementById('inp-name').value.trim();
+  const sid  = document.getElementById('inp-sid').value.trim();
+  const msg  = document.getElementById('login-msg');
+  if (!name || !sid) { msg.style.color='var(--accent3)'; msg.textContent='請填寫姓名與學號喔！'; return; }
+  if (!db) { enterApp(name, sid); return; }
+  msg.style.color='var(--accent4)'; msg.textContent='⏳ 驗證中…';
+  document.querySelector('.btn-go').disabled = true;
+  try {
+    let found = false;
+    const q1 = await db.collection('Users').where('studentId','==',sid).limit(1).get();
+    if (!q1.empty) found = true;
+    if (!found) { const q2 = await db.collection('Users').doc(sid).get(); if (q2.exists) found = true; }
+    if (!found) {
+      document.querySelector('.btn-go').disabled = false;
+      msg.style.color='var(--accent3)'; msg.textContent='⚠ 找不到這個學號，請確認或聯繫老師。'; return;
+    }
+    enterApp(name, sid);
+  } catch(e) {
+    document.querySelector('.btn-go').disabled = false;
+    enterApp(name, sid);
+  }
+}
+
+async function enterApp(name, sid) {
+  student = { name, sid };
+  document.getElementById('student-info').textContent = name + ' 同學 👋';
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display  = 'block';
+  document.getElementById('unit-area').innerHTML =
+    '<div style="padding:60px;text-align:center;color:var(--text-m);font-size:15px;font-weight:600;">⏳ 載入題目中…</div>';
+  await loadCourseData();
+  calcMaxScore();
+
+  // 檢查是否已完成所有單元（從 Firebase Scores 查詢）
+  if (db) {
+    try {
+      const completedUnits = [];
+      for (const u of ['qt1','qt2','qt3']) {
+        const doc = await db.collection('Scores').doc(sid + '_' + u).get();
+        if (doc.exists && doc.data().completed) completedUnits.push(u);
+      }
+      if (completedUnits.length === 3) {
+        // 已全部完成，直接顯示「已送出」畫面
+        showAlreadySubmitted(name, sid);
+        return;
+      }
+    } catch(e) { /* 查詢失敗就繼續正常流程 */ }
+  }
+
+  updateScoreBadge();
+  saveActivity('login');
+  goUnit(1);
+}
+
+function showAlreadySubmitted(name, sid) {
+  // 從 Scores 讀取分數顯示
+  const fetchScores = async () => {
+    let total = 0, max = 0;
+    for (const u of ['qt1','qt2','qt3']) {
+      try {
+        const doc = await db.collection('Scores').doc(sid + '_' + u).get();
+        if (doc.exists) { total += doc.data().score||0; max += doc.data().maxScore||0; }
+      } catch(e) {}
+    }
+    return { total, max };
+  };
+
+  document.getElementById('unit-area').innerHTML = `
+    <div class="done-wrap" style="padding:48px 20px;">
+      <span class="done-icon">📋</span>
+      <div class="done-title" style="color:var(--accent4);">考卷已送出</div>
+      <div class="done-sub">${name} 同學，你已經完成了所有題目！</div>
+      <div id="already-score" style="margin:20px 0;font-size:15px;color:var(--text-m);font-weight:600;">讀取成績中…</div>
+      <div style="
+        padding:12px 20px; margin:8px 0 12px;
+        background:rgba(120,150,168,.08); border:1.5px solid rgba(120,150,168,.25);
+        border-radius:10px; font-size:13px; color:var(--text-m); font-weight:600; line-height:1.8;">
+        📌 舊成績保留，重新作答會新增一筆記錄<br>
+        <span style="font-size:12px;font-weight:400;">老師後台可看到所有作答記錄</span>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button onclick="restartFromSubmitted()" style="flex:1;background:var(--accent);color:#f5f5f4;border:none;border-radius:8px;padding:12px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 3px 0 rgba(60,90,110,.25);">
+          🔄 重新作答
+        </button>
+        <button onclick="backToLogin()" style="flex:1;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:12px;font-family:inherit;font-size:14px;font-weight:600;color:var(--text-m);cursor:pointer;">
+          換人作答 →
+        </button>
+      </div>
+    </div>`;
+
+  fetchScores().then(({ total, max }) => {
+    const el = document.getElementById('already-score');
+    if (el) el.innerHTML = max > 0
+      ? `你的成績：<strong style="color:var(--accentY);font-size:20px;">${total} / ${max}</strong> 分`
+      : '成績讀取中，請稍候…';
+  });
+}
+
+// ── 從 Firebase 讀取（合併模式）──
+async function loadCourseData() {
+  courseData = JSON.parse(JSON.stringify(defaultUnits));
+  if (!db) return;
+  try {
+    const snap = await db.collection('CourseUnits').get();
+    snap.forEach(doc => {
+      const id = doc.id; const d = doc.data();
+      if (!courseData[id]) return;
+      if (d.unitName) courseData[id].unitName = d.unitName;
+      if (d.intro)    courseData[id].intro    = d.intro;
+      if (d.keypoint) courseData[id].keypoint = d.keypoint;
+      if (d.questions && d.questions.length) {
+        courseData[id].questions = d.questions;
+        const uNum = id==='qt1'?1:id==='qt2'?2:3;
+        d.questions.forEach((q,i) => {
+          const qid = 'u'+uNum+'q'+i;
+          const def = questionBank[qid] || {};
+          // 本地預設優先：type/opts/correct 以本地 questionBank 為主
+          // Firebase 只覆蓋回饋語（老師在後台改過的文字）
+          const fbType = q.type && q.type !== 'open' ? q.type : def.type || 'single';
+          const fbOpts = (q.opts && q.opts.length && q.type !== 'open') ? q.opts : (def.opts||[]);
+          const fbCorr = (q.correct !== undefined && q.correct !== null && q.correct !== '' && q.type !== 'open')
+                           ? q.correct : (def.correct !== undefined ? def.correct : null);
+          questionBank[qid] = {
+            type:     fbType,
+            opts:     fbOpts.length ? fbOpts : (def.opts||[]),
+            correct:  fbCorr !== null ? fbCorr : def.correct,
+            keywords: (q.keywords && q.keywords.length) ? q.keywords : (def.keywords||[]),
+            fb_c: q.fb_c||def.fb_c||'', fb_w: q.fb_w||def.fb_w||'', fb_o: q.fb_o||def.fb_o||''
+          };
+        });
+      }
+    });
+  } catch(e) { console.warn('讀取失敗，使用預設：', e.message); }
+}
+
+// ── 渲染單元 ──
+function goUnit(n) {
+  curUnit = n;
+  document.querySelectorAll('.unit-tab').forEach((t,i) => t.classList.toggle('active', i+1===n));
+  updateProg();
+
+  const data = courseData['qt'+n] || defaultUnits['qt'+n];
+  if (!data) return;
+
+  const introTxt = data.intro    || '歡迎來到' + data.unitName + '！';
+  const keyTxt   = data.keypoint || '';
+  const emojis   = ['⚔️','🧪','🎣'];
+
+  // 計算本單元滿分
+  let unitMax = 0;
+  (data.questions||[]).forEach((q,i) => {
+    const bank = questionBank['u'+n+'q'+i] || {};
+    unitMax += (bank.type==='open') ? PTS_OPEN : PTS_CORRECT;
+  });
+
+  let html = `
+    <div class="ai-bubble">
+      <div class="ai-ava">${emojis[n-1]}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="ai-name">✦ AI 教師說</div>
+        <div class="ai-text">${toHtml(introTxt)}</div>
+        ${keyTxt ? `<div class="study-card">${toHtml(keyTxt)}</div>` : ''}
+        <div class="ai-btns">
+          <button class="btn-speak" onclick="speakBtn(this,'${escQ(introTxt)}')">🔊 聆聽說明</button>
+          ${keyTxt ? `<button class="btn-speak green" onclick="speakBtn(this,'${escQ(keyTxt)}')">📖 聆聽學習重點</button>` : ''}
+        </div>
+      </div>
+    </div>`;
+
+  // 答題進度列
+  if (data.questions && data.questions.length) {
+    const dots = data.questions.map((_,i) => {
+      const qid = 'u'+n+'q'+i;
+      const a = answered[qid];
+      const cls = a ? (a.correct===true?'c':a.correct===false?'w':'o') : '';
+      return `<div class="sdot ${cls}" id="dot-${qid}"></div>`;
+    }).join('');
+    const unitScoreNow = data.questions.reduce((s,_,i) => s + (answered['u'+n+'q'+i]?.pts||0), 0);
+    html += `<div class="score-bar">
+      <span class="score-bar-label">📋 答題進度</span>
+      <div class="score-dots">${dots}</div>
+      <div class="score-num" id="unit-score-now">${unitScoreNow} / ${unitMax} 分</div>
+    </div>`;
+  }
+
+  if (data.questions && data.questions.length) {
+    data.questions.forEach((q,i) => {
+      const qid  = 'u'+n+'q'+i;
+      const bank = questionBank[qid] || {};
+      const type = bank.type || (q.type==='簡答題'?'open':q.type==='多選題'?'multi':'single');
+      const lbl  = type==='multi'?'多選題':type==='single'?'單選題':'簡答題';
+      const pts  = type==='open' ? PTS_OPEN : PTS_CORRECT;
+      const delay = (i * 0.07).toFixed(2);
+      let body = '';
+
+      if (type === 'multi') {
+        body = `<div style="font-size:12px;color:var(--text-d);font-weight:600;margin-bottom:12px;">💡 可以選多個答案</div>
+          <div class="opts-grid" id="o-${qid}">
+            ${(bank.opts||[]).map((o,oi) => `<div class="opt" onclick="tog(this,'${qid}')" data-i="${oi}">${o}</div>`).join('')}
+          </div>
+          <button class="btn-ok" onclick="subMulti('${qid}')">確認答案 ✓</button>`;
+      } else if (type === 'single') {
+        body = `<div class="opts-col" id="o-${qid}">
+            ${(bank.opts||[]).map((o,oi) => `<div class="opt" onclick="pick(this,'${qid}')" data-i="${oi}">${o}</div>`).join('')}
+          </div>
+          <button class="btn-ok" onclick="subSingle('${qid}')">確認答案 ✓</button>`;
+      } else {
+        body = `<div class="open-hint">✏️ 用自己的話寫下答案</div>
+          <textarea class="ans-ta" id="ta-${qid}" placeholder="在這裡寫下你的答案…"></textarea>
+          <button class="btn-ok" onclick="subOpen('${qid}')">送出答案 📨</button>`;
+      }
+
+      html += `
+        <div class="q-card" id="qc-${qid}" style="animation-delay:${delay}s;">
+          <div class="q-header">
+            <span class="q-num">第 ${i+1} 題</span>
+            <span class="q-type-tag ${type}">${lbl}</span>
+            <span class="q-pts">${pts} 分</span>
+          </div>
+          <div class="q-text">${toHtml(q.text)}</div>
+          <button class="btn-speak" style="margin-bottom:14px;font-size:12px;" onclick="speakBtn(this,'${escQ(q.text)}')">🔊 朗讀題目</button>
+          ${body}
+          <div class="fb-box" id="fb-${qid}"></div>
+        </div>`;
+    });
+  } else {
+    html += '<div style="text-align:center;padding:60px;color:var(--text-d);">本單元暫無題目內容</div>';
+  }
+
+  document.getElementById('unit-area').innerHTML = html;
+
+  if (data.questions) {
+    data.questions.forEach((_,i) => { if (answered['u'+n+'q'+i]) restoreQ('u'+n+'q'+i); });
+  }
+  if (unitDone[n]) addNextBtn(n);
+  setTimeout(() => speak(introTxt), 400);
+}
+
+function updateProg() {
+  const d = Object.values(unitDone).filter(Boolean).length;
+  document.getElementById('prog-fill').style.width = (d/3*100)+'%';
+  document.getElementById('prog-text').textContent = d + ' / 3 關卡完成';
+}
+
+// ── 單元結算卡 ──
+function addNextBtn(n) {
+  if (document.getElementById('nxt-btn')) return;
+  const area = document.getElementById('unit-area');
+  const wrap = document.createElement('div'); wrap.id = 'nxt-btn';
+
+  if (n === 3) {
+    // 計算單元3本身的分數（不是三關總分）
+    const dataU3  = courseData['qt3'] || defaultUnits['qt3'];
+    const qsU3    = (dataU3 && dataU3.questions) || [];
+    let u3Score = 0, u3Max = 0;
+    qsU3.forEach((_, i) => {
+      const qid  = 'u3q' + i;
+      const bank = questionBank[qid] || {};
+      u3Max   += (bank.type === 'open') ? PTS_OPEN : PTS_CORRECT;
+      u3Score += (answered[qid]?.pts || 0);
+    });
+
+    const finalPct = maxScore > 0 ? Math.round(totalScore/maxScore*100) : 0;
+    const grade = finalPct>=90?'🏆 超級英雄！':finalPct>=70?'⭐ 表現很棒！':finalPct>=50?'💪 繼續努力！':'🌱 下次會更好！';
+    wrap.innerHTML = `
+      <div class="done-wrap">
+        <span class="done-icon">🏆</span>
+        <div class="done-title">全部完成！太厲害了！</div>
+        <div class="done-sub">義勇成功打敗大魔王！<br><strong>你對磁鐵的知識非常扎實！</strong></div>
+
+        <div class="final-score">
+          <div class="final-score-big">${totalScore}<span style="font-size:32px;opacity:.5"> / ${maxScore}</span></div>
+          <div class="final-score-lbl">${grade}</div>
+        </div>
+
+        <!-- 已送出提示 -->
+        <div style="
+          display:flex; align-items:center; gap:10px; justify-content:center;
+          margin-top:20px; padding:12px 20px;
+          background:rgba(138,170,142,.1); border:1.5px solid rgba(138,170,142,.35);
+          border-radius:10px; font-size:13px; color:var(--correct-txt); font-weight:600;">
+          ✅ 成績已記錄！可重新作答，舊成績會保留
+        </div>
+
+        <div class="done-sub" style="font-size:12px;margin-top:12px;color:var(--text-d);">
+          每題答對得 1 分，答錯得 0 分
+        </div>
+
+        <!-- 按鈕列 -->
+        <div style="display:flex;gap:10px;margin-top:20px;">
+          <button onclick="restartQuiz()" style="flex:1;background:var(--accent);color:#f5f5f4;border:none;border-radius:8px;padding:12px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 3px 0 rgba(60,90,110,.25);">
+            🔄 重新作答
+          </button>
+          <button onclick="backToLogin()" style="flex:1;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:12px;font-family:inherit;font-size:14px;font-weight:600;color:var(--text-m);cursor:pointer;">
+            換人作答 →
+          </button>
+        </div>
+      </div>`;
+    saveUnitScore(n, u3Score, u3Max);
+  } else {
+    // 單元結算
+    const data    = courseData['qt'+n] || defaultUnits['qt'+n];
+    const qs      = (data && data.questions) || [];
+    let uScore=0, uMax=0, nC=0, nW=0, nO=0;
+    qs.forEach((_,i) => {
+      const qid  = 'u'+n+'q'+i;
+      const bank = questionBank[qid] || {};
+      const pts  = bank.type==='open' ? PTS_OPEN : PTS_CORRECT;
+      uMax += pts;
+      const a = answered[qid];
+      if (a) {
+        uScore += (a.pts||0);
+        if (a.correct===true)  nC++;
+        else if (a.correct===false) nW++;
+        else nO++;
+      }
+    });
+    const nextName = courseData['qt'+(n+1)]?.unitName || '';
+    const emojis = ['','⚔️','🧪','🎣'];
+    wrap.innerHTML = `
+      <div class="unit-result-card">
+        <div class="unit-result-title">✦ 單元 ${n} 完成！</div>
+        <div class="unit-result-sub">來看看你這關的成績吧</div>
+        <div class="score-display">
+          <div class="score-big">${uScore}<span style="font-size:24px;opacity:.5"> / ${uMax}</span></div>
+          <div class="score-label">本關得分</div>
+        </div>
+        <div class="score-breakdown">
+          <div class="sb-item"><div class="sb-dot" style="background:var(--accent2)"></div>答對 ${nC} 題</div>
+          <div class="sb-item"><div class="sb-dot" style="background:var(--accent3)"></div>答錯 ${nW} 題</div>
+          <div class="sb-item"><div class="sb-dot" style="background:var(--accent)"></div>簡答 ${nO} 題</div>
+        </div>
+        <button class="btn-next" onclick="goUnit(${n+1})">${emojis[n+1]} 前往單元${n+1}・${nextName} →</button>
+      </div>`;
+    saveUnitScore(n, uScore, uMax);
+  }
+  area.appendChild(wrap);
+}
+
+// ── 儲存單元分數到 Firebase ──
+async function saveUnitScore(unit, score, maxPts) {
+  if (!db) return;
+  try {
+    const data = courseData['qt'+unit] || defaultUnits['qt'+unit];
+    const qs   = (data && data.questions) || [];
+
+    // 只計算選擇題（single/multi）的正確率
+    let choiceTotal = 0, choiceCorrect = 0;
+    let openTotal = 0, openCorrect = 0;
+    qs.forEach((_, i) => {
+      const qid  = 'u' + unit + 'q' + i;
+      const bank = questionBank[qid] || {};
+      const a    = answered[qid];
+      if (!a) return;
+      if (bank.type === 'open') {
+        openTotal++;
+        if (a.correct === true) openCorrect++;
+      } else {
+        choiceTotal++;
+        if (a.correct === true) choiceCorrect++;
+      }
+    });
+
+    const choiceAcc = choiceTotal > 0
+      ? Math.round(choiceCorrect / choiceTotal * 100) : null;
+
+    // 每次作答都新增一筆（保留歷史，不覆蓋）
+    await db.collection('Scores').add({
+      studentId:      student.sid,
+      studentName:    student.name,
+      unit:           'qt' + unit,
+      score:          score,
+      maxScore:       maxPts,
+      pct:            maxPts > 0 ? Math.round(score / maxPts * 100) : 0,
+      choiceAccuracy: choiceAcc,   // 選擇題正確率（%）
+      choiceCorrect,
+      choiceTotal,
+      openTotal,
+      openCorrect,
+      completed:      true,
+      updatedAt:      firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch(e) { console.warn('分數存檔失敗：', e.message); }
+}
+
+// ── TTS ──
+function toHtml(t) {
+  return t.replace(/\[強調\]([\s\S]*?)\[\/強調\]/g,'<strong>$1</strong>').replace(/\[停頓[\d.]+秒\]/g,'');
+}
+function escQ(t) { return t.replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+
+function buildSegs(raw) {
+  raw = raw.replace(/\[強調\]([\s\S]*?)\[\/強調\]/g,'$1');
+  const pts = raw.split(/(\[停頓([\d.]+)秒\])/g);
+  const out=[]; let i=0;
+  while (i<pts.length) {
+    const t = pts[i].replace(/\n/g,'，').trim();
+    if (t) out.push({type:'s',t});
+    if (pts[i+1]&&pts[i+1].startsWith('[停頓')) { out.push({type:'p',ms:Math.round(parseFloat(pts[i+2])*1000)}); i+=3; }
+    else i++;
+  }
+  return out.filter(s=>s.type!=='s'||s.t.length>0);
+}
+
+function runSegs(segs,i,btn) {
+  if (i>=segs.length) { if(btn){btn.textContent=btn._orig;btn.disabled=false;} return; }
+  const s=segs[i];
+  if (s.type==='p') { setTimeout(()=>runSegs(segs,i+1,btn),s.ms); return; }
+  const u=new SpeechSynthesisUtterance(s.t);
+  u.lang='zh-TW'; u.rate=0.78; u.pitch=1.15; u.volume=1;
+  const vv=window.speechSynthesis.getVoices();
+  const v=vv.find(v=>(v.lang==='zh-TW'||v.lang.startsWith('zh'))&&/meijia|美嘉|female|tingting|雅慧/i.test(v.name))
+         ||vv.find(v=>v.lang==='zh-TW')||vv.find(v=>v.lang.startsWith('zh'));
+  if(v) u.voice=v;
+  u.onend=u.onerror=()=>runSegs(segs,i+1,btn);
+  window.speechSynthesis.speak(u);
+}
+
+function speak(text,btn) {
+  window.speechSynthesis.cancel();
+  if(btn){if(!btn._orig)btn._orig=btn.textContent; btn.textContent='🔊 播放中…'; btn.disabled=true;}
+  const go=()=>runSegs(buildSegs(text),0,btn);
+  window.speechSynthesis.getVoices().length===0?(window.speechSynthesis.onvoiceschanged=go):go();
+}
+function speakBtn(btn,text) {
+  if(btn.disabled){window.speechSynthesis.cancel();btn.textContent=btn._orig;btn.disabled=false;return;}
+  speak(text,btn);
+}
+
+// ── 作答互動 ──
+function tog(el,qid)  { if(answered[qid]) return; el.classList.toggle('sel'); }
+function pick(el,qid) {
+  if(answered[qid]) return;
+  document.querySelectorAll('#o-'+qid+' .opt').forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function showFb(qid, cls, icon, text, pts) {
+  const fb = document.getElementById('fb-'+qid);
+  if (!fb) return;
+
+  let ptsBadge = '';
+  if (pts !== undefined) {
+    ptsBadge = `<div><span class="pts-badge">＋${pts} 分</span></div>`;
+  }
+
+  fb.className = 'fb-box show ' + cls;
+  fb.innerHTML = `<span class="fb-icon">${icon}</span>
+    <div><span class="fb-text">${toHtml(text)}</span>${ptsBadge}</div>`;
+
+  // 更新答題小點
+  const dot = document.getElementById('dot-'+qid);
+  if (dot) {
+    dot.classList.remove('c','w','o');
+    dot.classList.add(cls==='correct'?'c':cls==='wrong'?'w':'o');
+  }
+  // 卡片邊框
+  const card = document.getElementById('qc-'+qid);
+  if (card) card.classList.add(cls==='correct'?'ac':cls==='wrong'?'aw':'ao');
+
+  // 更新單元分數列
+  updateUnitScoreDisplay();
+  speak(text);
+  setTimeout(() => fb.scrollIntoView({behavior:'smooth',block:'nearest'}), 200);
+}
+
+function updateUnitScoreDisplay() {
+  const data = courseData['qt'+curUnit] || defaultUnits['qt'+curUnit];
+  if (!data || !data.questions) return;
+  let uScore=0, uMax=0;
+  data.questions.forEach((_,i) => {
+    const qid  = 'u'+curUnit+'q'+i;
+    const bank = questionBank[qid] || {};
+    uMax  += (bank.type==='open') ? PTS_OPEN : PTS_CORRECT;
+    uScore += (answered[qid]?.pts||0);
+  });
+  const el = document.getElementById('unit-score-now');
+  if (el) el.textContent = uScore + ' / ' + uMax + ' 分';
+}
+
+function lockOpts(qid, bank) {
+  document.querySelectorAll('#o-'+qid+' .opt').forEach(o => {
+    const i = parseInt(o.dataset.i);
+    const isC = Array.isArray(bank.correct) ? bank.correct.includes(i) : i===bank.correct;
+    o.classList.remove('sel');
+    if (isC) o.classList.add('correct');
+    else if (o.classList.contains('sel')) o.classList.add('wrong');
+    o.onclick=null; o.style.cursor='default';
+  });
+  const cbtn = document.querySelector('#qc-'+qid+' .btn-ok');
+  if (cbtn) cbtn.style.display='none';
+}
+
+function subMulti(qid) {
+  if (answered[qid]) return;
+  const bank=questionBank[qid]; if(!bank) return;
+  const sel=Array.from(document.querySelectorAll('#o-'+qid+' .opt.sel')).map(o=>parseInt(o.dataset.i)).sort();
+  const cor=[...bank.correct].sort();
+  const isC=JSON.stringify(sel)===JSON.stringify(cor);
+  const pts = isC ? PTS_CORRECT : PTS_WRONG;
+  lockOpts(qid,bank);
+  if (!isC) document.querySelectorAll('#o-'+qid+' .opt.sel').forEach(o=>{ if(!o.classList.contains('correct')) o.classList.add('wrong'); });
+  showFb(qid, isC?'correct':'wrong', isC?'🎉':'💭', isC?bank.fb_c:bank.fb_w, pts);
+  answered[qid]={correct:isC, pts};
+  totalScore += pts; updateScoreBadge();
+  saveAns(qid, sel.join(','), isC, pts);
+  if(isC) burst();
+  checkDone();
+}
+
+function subSingle(qid) {
+  if (answered[qid]) return;
+  const bank=questionBank[qid]; if(!bank) return;
+  const s=document.querySelector('#o-'+qid+' .opt.sel'); if(!s) return;
+  const i=parseInt(s.dataset.i); const isC=i===bank.correct;
+  const pts = isC ? PTS_CORRECT : PTS_WRONG;
+  lockOpts(qid,bank);
+  if(!isC) s.classList.add('wrong');
+  showFb(qid, isC?'correct':'wrong', isC?'🎉':'💭', isC?bank.fb_c:bank.fb_w, pts);
+  answered[qid]={correct:isC, pts};
+  totalScore += pts; updateScoreBadge();
+  saveAns(qid, bank.opts[i], isC, pts);
+  if(isC) burst();
+  checkDone();
+}
+
+function subOpen(qid) {
+  if (answered[qid]) return;
+  const bank=questionBank[qid]; if(!bank) return;
+  const ta=document.getElementById('ta-'+qid);
+  const val=ta?ta.value.trim():'';
+  if(!val){if(ta)ta.focus(); return;}
+  if(ta) ta.disabled=true;
+  const cbtn=document.querySelector('#qc-'+qid+' .btn-ok');
+  if(cbtn) cbtn.style.display='none';
+
+  // ── 關鍵字匹配評分 ──
+  const keywords = bank.keywords || [];
+  let matched = false;
+  if (keywords.length > 0) {
+    const norm = val.replace(/\s/g,'').toLowerCase();
+    matched = keywords.some(kw => norm.includes(kw.replace(/\s/g,'').toLowerCase()));
+  }
+
+  const hasKw  = keywords.length > 0;
+  const pts    = matched ? 1 : 0;
+  const cls    = matched ? 'correct' : (hasKw ? 'wrong' : 'open');
+  const icon   = matched ? '🎉' : (hasKw ? '💭' : '📩');
+  const fbText = matched
+    ? (bank.fb_c || '答對了！包含了正確的關鍵概念！')
+    : hasKw
+      ? (bank.fb_w || '再想想看！試著用課本的關鍵字來回答喔！')
+      : (bank.fb_o || '收到你的答案了！老師會幫你批改喔！');
+
+  showFb(qid, cls, icon, fbText, pts);
+  answered[qid] = { correct: matched ? true : (hasKw ? false : null), pts };
+  totalScore += pts; updateScoreBadge();
+  updateUnitScoreDisplay();
+  saveAns(qid, val, matched, pts);
+  checkDone();
+}
+
+function restoreQ(qid) {
+  const a=answered[qid]; if(!a) return;
+  const bank=questionBank[qid]; if(!bank) return;
+  lockOpts(qid,bank);
+  const card=document.getElementById('qc-'+qid);
+  if(bank.type==='open') {
+    const ta=document.getElementById('ta-'+qid); if(ta) ta.disabled=true;
+    const cbtn=document.querySelector('#qc-'+qid+' .btn-ok'); if(cbtn) cbtn.style.display='none';
+    const oCls  = a.correct===true?'correct':a.correct===false?'wrong':'open';
+    const oIcon = a.correct===true?'🎉':a.correct===false?'💭':'📩';
+    const oText = a.correct===true?(bank.fb_c||''):(a.correct===false?(bank.fb_w||''):(bank.fb_o||''));
+    showFb(qid, oCls, oIcon, oText, a.pts);
+  } else {
+    showFb(qid, a.correct?'correct':'wrong', a.correct?'🎉':'💭', a.correct?bank.fb_c:bank.fb_w, a.pts);
+  }
+}
+
+function checkDone() {
+  const data=courseData['qt'+curUnit]||defaultUnits['qt'+curUnit];
+  if(!data||!data.questions) return;
+  const allDone=data.questions.every((_,i)=>answered['u'+curUnit+'q'+i]);
+  if(allDone&&!unitDone[curUnit]) {
+    unitDone[curUnit]=true;
+    updateProg();
+    const nav=document.getElementById('nav-'+curUnit);
+    if(nav){nav.classList.add('done');nav.classList.remove('active');}
+    addNextBtn(curUnit);
+    saveActivity(curUnit<3?'unit_complete':'all_complete','單元'+curUnit);
+    const msg=curUnit<3
+      ?'很棒！[停頓0.5秒]你完成了單元'+curUnit+'！[停頓0.5秒]準備好前往下一關了嗎？'
+      :'恭喜你完成了所有單元！[停頓0.5秒]你真的非常厲害！[停頓0.5秒][強調]義勇打敗大魔王了！[/強調]';
+    setTimeout(()=>speak(msg),600);
+  }
+}
+
+// ── 儲存答題記錄（含分數）──
+async function saveAns(qid, answer, correct, pts) {
+  if(!db) return;
+  try {
+    const bank = questionBank[qid] || {};
+    await db.collection('Answers').add({
+      studentId:   student.sid,
+      studentName: student.name,
+      unit:        'qt'+curUnit,
+      question:    qid,
+      answer:      String(answer),
+      correct:     correct,
+      pts:         pts,
+      isOpen:      bank.type==='open',
+      needsReview: bank.type==='open' && correct===false,  // 關鍵字未匹配，老師需複審
+      timestamp:   firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch(e){ console.warn('存檔失敗：',e.message); }
+}
+
+// ── 儲存登入活動紀錄 ──
+async function saveActivity(type, detail='') {
+  if(!db) return;
+  try {
+    await db.collection('Activities').add({
+      studentId:   student.sid,
+      studentName: student.name,
+      type,        // 'login' | 'unit_complete' | 'all_complete'
+      detail,
+      timestamp:   firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch(e){ console.warn('活動紀錄失敗：',e.message); }
+}
+
+// ── 重新作答（保留登入身份，清前端狀態重做）──
+function restartQuiz() {
+  curUnit = 1;
+  Object.keys(unitDone).forEach(k => unitDone[k] = false);
+  Object.keys(answered).forEach(k => delete answered[k]);
+  totalScore = 0;
+  calcMaxScore();
+  updateScoreBadge();
+  document.querySelectorAll('.unit-tab').forEach((t,i) => {
+    t.classList.remove('done','active');
+    if (i===0) t.classList.add('active');
+  });
+  updateProg();
+  saveActivity('restart');
+  goUnit(1);
+}
+
+// ── 從「已送出」畫面重新作答（重新載入題目再開始）──
+async function restartFromSubmitted() {
+  document.getElementById('unit-area').innerHTML =
+    '<div style="padding:60px;text-align:center;color:var(--text-m);font-size:15px;font-weight:600;">⏳ 載入題目中…</div>';
+  await loadCourseData();
+  restartQuiz();
+}
+
+// ── 登出 / 回到登入頁 ──
+function backToLogin() {
+  student = { name:'', sid:'' };
+  curUnit = 1;
+  courseData = {};
+  Object.keys(unitDone).forEach(k => unitDone[k] = false);
+  Object.keys(answered).forEach(k => delete answered[k]);
+  totalScore = 0; maxScore = 0;
+  window.speechSynthesis.cancel();
+  document.getElementById('inp-name').value = '';
+  document.getElementById('inp-sid').value = '';
+  document.getElementById('login-msg').textContent = '';
+  document.getElementById('main-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('score-badge').style.display = 'none';
+  document.querySelector('.btn-go').disabled = false;
+}
+
+// ── 星星特效 ──
+function burst() {
+  const wrap=document.getElementById('stars');
+  wrap.style.display='block'; wrap.innerHTML='';
+  const colors=['var(--accentY)','var(--accent2)','var(--accent)','var(--accent4)','var(--accent3)'];
+  for(let i=0;i<28;i++){
+    const s=document.createElement('div'); s.className='star';
+    const sz=6+Math.random()*10;
+    s.style.cssText=`left:${5+Math.random()*90}%;top:-20px;width:${sz}px;height:${sz}px;`+
+      `animation-delay:${Math.random()*.7}s;background:${colors[Math.floor(Math.random()*colors.length)]};`;
+    wrap.appendChild(s);
+  }
+  setTimeout(()=>{wrap.style.display='none';},2200);
+}
+</script>
+</body>
+</html>
