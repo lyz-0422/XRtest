@@ -8,6 +8,7 @@
 <!-- Firebase compat SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
 <script>
 if(typeof firebase === 'undefined'){ window.firebase={initializeApp:()=>{},firestore:()=>null}; }
 let _fbdb = null;
@@ -2435,29 +2436,78 @@ try {
     processFiles(e.target.files);
   }
 
-  function processFiles(files) {
+  // 替換原本的 processFiles 函數
+  async function processFiles(files) {
     const list = document.getElementById('model-list');
-    Array.from(files).forEach(f => {
+    
+    // 確保 Firebase Storage 有被初始化
+    if (!window._fbstorage) {
+      try {
+        window._fbstorage = firebase.storage();
+      } catch (e) {
+        toast('⚠ Firebase Storage 尚未載入，請確認 <head> 有引入套件');
+        console.error(e);
+        return;
+      }
+    }
+
+    // 使用 for...of 以便支援 async/await 的依序上傳
+    for (let f of files) {
+      // 產生一個唯一 ID，避免檔名有特殊字元導致抓不到 UI
+      const safeId = 'status-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+      
+      // 1. 在畫面上產生一個「處理中」的模型項目
       const item = document.createElement('div');
       item.className = 'model-item';
       item.style.animation = 'fadeUp 0.3s ease both';
       item.innerHTML = `<div class="model-thumb">📁</div>
         <div class="model-info">
           <div class="model-name">${f.name}</div>
-          <div class="model-meta">${(f.size/1024/1024).toFixed(1)} MB・剛剛上傳</div>
+          <div class="model-meta" id="meta-${safeId}">${(f.size/1024/1024).toFixed(1)} MB・準備上傳...</div>
         </div>
-        <span class="model-status status-draft">處理中</span>
+        <span class="model-status status-draft" id="${safeId}">上傳中 ⏳</span>
         <div class="model-actions">
           <button class="btn-small">預覽</button>
           <button class="btn-small btn-danger" onclick="deleteModel(this)">刪除</button>
         </div>`;
       list.appendChild(item);
-      setTimeout(() => {
-        item.querySelector('.model-status').className = 'model-status status-active';
-        item.querySelector('.model-status').textContent = '已啟用';
-      }, 1500);
-    });
-    toast(`已上傳 ${files.length} 個檔案`);
+
+      // 2. 開始真正上傳到 Firebase Storage
+      try {
+        const storageRef = window._fbstorage.ref();
+        const fileRef = storageRef.child('models/' + f.name); // 存放在 models 資料夾
+        
+        // 執行上傳
+        await fileRef.put(f);
+        
+        // 取得真實下載網址 (展示當天用來餵給 Unity)
+        const downloadURL = await fileRef.getDownloadURL();
+        console.log(`✅ ${f.name} 上傳成功！下載網址:`, downloadURL);
+        
+        // 更新畫面狀態為成功
+        const statusBadge = document.getElementById(safeId);
+        if (statusBadge) {
+          statusBadge.className = 'model-status status-active';
+          statusBadge.textContent = '已上傳雲端';
+        }
+        const metaInfo = document.getElementById(`meta-${safeId}`);
+        if (metaInfo) {
+          metaInfo.textContent = `${(f.size/1024/1024).toFixed(1)} MB・剛剛上傳`;
+        }
+
+      } catch (error) {
+        console.error("上傳失敗:", error);
+        // 更新畫面狀態為失敗
+        const statusBadge = document.getElementById(safeId);
+        if (statusBadge) {
+          statusBadge.className = 'model-status status-draft';
+          statusBadge.textContent = '上傳失敗';
+          statusBadge.style.color = '#b08a84'; // 使用你的 --accent3 錯誤顏色
+        }
+        toast(`❌ ${f.name} 上傳失敗: ${error.message}`);
+      }
+    }
+    toast(`✅ 共處理 ${files.length} 個檔案`);
   }
 
   function deleteModel(btn) {
