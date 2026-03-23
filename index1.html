@@ -1722,7 +1722,7 @@ try {
               <span class="format-tag">.jpg</span>
             </div>
           </div>
-          <input type="file" id="file-input" style="display:none" onchange="handleFileSelect(event)">
+          <input type="file" id="file-input" multiple style="display:none" onchange="handleFileSelect(event)">
         </div>
 
         <div class="card">
@@ -2421,13 +2421,16 @@ try {
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
     hideSaveBar();
-    // 切換到學生頁時自動從 Firebase 讀取
+    
     if (page === 'students' && window._loadStudentsFromFirebase) {
       window._loadStudentsFromFirebase();
     }
-    // 切換到回饋頁時自動載入問卷設計器與回饋記錄
     if (page === 'feedback') {
       initFeedbackPage();
+    }
+    // 🌟 關鍵新增：切換到模型庫時，自動從 Firebase 讀取！
+    if (page === 'models') {
+      loadModelsFromFirebase();
     }
   }
 
@@ -2508,56 +2511,145 @@ try {
   async function processFiles(files) {
     const list = document.getElementById('model-list');
     
+    // 如果畫面上還留著「尚未上傳任何模型」的提示，就把它清空！
+    if (list.innerHTML.includes('尚未上傳任何模型') || list.innerHTML.includes('讀取模型清單中')) {
+      list.innerHTML = '';
+    }
+
     // 確認有沒有初始化 Storage
     if (!window._fbstorage) {
       window._fbstorage = firebase.storage();
     }
 
     for (let f of files) {
+      // 產生一個唯一 ID 方便控制狀態
+      const safeId = 'status-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+      const icon = f.name.endsWith('.png') || f.name.endsWith('.jpg') ? '🖼️' : '🧊';
+
       // 1. 先在畫面上產生一個「處理中」的區塊
       const item = document.createElement('div');
       item.className = 'model-item';
-      item.innerHTML = `<div class="model-thumb">📁</div>
+      item.innerHTML = `<div class="model-thumb">${icon}</div>
         <div class="model-info">
           <div class="model-name">${f.name}</div>
-          <div class="model-meta">${(f.size/1024/1024).toFixed(1)} MB・上傳中...</div>
+          <div class="model-meta" id="meta-${safeId}">${(f.size/1024/1024).toFixed(1)} MB・上傳中...</div>
         </div>
-        <span class="model-status status-draft" id="status-${f.name.replace(/\./g,'')}">上傳中 ⏳</span>
+        <span class="model-status status-draft" id="${safeId}">上傳中 ⏳</span>
         <div class="model-actions">
-          <button class="btn-small btn-danger" onclick="deleteModel(this)">刪除</button>
+          <button class="btn-small" onclick="previewModel('${f.name}', '${icon}', '${f.name}', '${(f.size/1024/1024).toFixed(1)} MB')">預覽</button>
+          <button class="btn-small btn-danger" onclick="deleteModelFromFirebase('${f.name}', this)">刪除</button>
         </div>`;
-      list.appendChild(item);
+      // 插在清單的最上面
+      list.insertBefore(item, list.firstChild);
 
-      // 2. 開始真正上傳到 Firebase Storage 的 models 資料夾
+      // 2. 開始真正上傳到 Firebase Storage + 寫入 Firestore
       try {
         const storageRef = window._fbstorage.ref();
         const fileRef = storageRef.child('models/' + f.name);
         
         // 執行上傳
         await fileRef.put(f);
-        
-        // 取得真實下載網址 (未來給 Unity 用的)
         const downloadURL = await fileRef.getDownloadURL();
-        console.log(`✅ ${f.name} 上傳成功！下載網址:`, downloadURL);
         
+        // 🌟 關鍵新增：把模型資訊存到 Firestore 資料庫的 Models 集合裡！
+        await _fbdb.collection('Models').doc(f.name).set({
+            name: f.name,
+            size: (f.size/1024/1024).toFixed(1) + ' MB',
+            url: downloadURL,
+            uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
         // 更新畫面狀態為已啟用
-        const statusBadge = item.querySelector(`#status-${f.name.replace(/\./g,'')}`);
+        const statusBadge = document.getElementById(safeId);
         if (statusBadge) {
           statusBadge.className = 'model-status status-active';
           statusBadge.textContent = '已上傳雲端';
+        }
+        const metaInfo = document.getElementById(`meta-${safeId}`);
+        if (metaInfo) {
+          metaInfo.textContent = `${(f.size/1024/1024).toFixed(1)} MB・剛剛上傳`;
         }
         toast(`✅ ${f.name} 上傳成功！`);
 
       } catch (error) {
         console.error("上傳失敗:", error);
         toast(`❌ ${f.name} 上傳失敗: ${error.message}`);
-        const statusBadge = item.querySelector(`#status-${f.name.replace(/\./g,'')}`);
+        const statusBadge = document.getElementById(safeId);
         if (statusBadge) {
           statusBadge.className = 'model-status status-draft';
           statusBadge.textContent = '上傳失敗';
           statusBadge.style.color = 'red';
         }
       }
+    }
+  }
+  
+  // ==========================================
+  // 🌟 從資料庫讀取已上傳的模型名單
+  // ==========================================
+  async function loadModelsFromFirebase() {
+    if (!_fbdb) return;
+    const list = document.getElementById('model-list');
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">讀取模型清單中...</div>';
+    
+    try {
+      // 照上傳時間排序，最新的在上面
+      const snap = await _fbdb.collection('Models').orderBy('uploadedAt', 'desc').get();
+      
+      if (snap.empty) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">尚未上傳任何模型</div>';
+        return;
+      }
+
+      let html = '';
+      snap.forEach(doc => {
+        const d = doc.data();
+        const icon = d.name.endsWith('.png') || d.name.endsWith('.jpg') ? '🖼️' : '🧊';
+        // 渲染每一筆模型
+        html += `
+        <div class="model-item">
+          <div class="model-thumb">${icon}</div>
+          <div class="model-info">
+            <div class="model-name">${d.name}</div>
+            <div class="model-meta">${d.size}</div>
+          </div>
+          <span class="model-status status-active">已上傳雲端</span>
+          <div class="model-actions">
+            <button class="btn-small" onclick="previewModel('${d.name}', '${icon}', '${d.name}', '${d.size}')">預覽</button>
+            <button class="btn-small btn-danger" onclick="deleteModelFromFirebase('${d.name}', this)">刪除</button>
+          </div>
+        </div>`;
+      });
+      list.innerHTML = html;
+    } catch(e) {
+      list.innerHTML = `<div style="color:var(--accent3);padding:20px;">讀取失敗: ${e.message}</div>`;
+    }
+  }
+
+  // ==========================================
+  // 🌟 刪除雲端硬碟檔案與資料庫紀錄
+  // ==========================================
+  async function deleteModelFromFirebase(filename, btn) {
+    if (!confirm(`確定要徹底刪除 ${filename} 嗎？`)) return;
+    
+    btn.textContent = '刪除中...';
+    btn.disabled = true;
+    
+    try {
+      // 1. 刪除資料庫紀錄
+      await _fbdb.collection('Models').doc(filename).delete();
+      
+      // 2. 刪除 Storage 實體檔案
+      if (!window._fbstorage) window._fbstorage = firebase.storage();
+      await window._fbstorage.ref('models/' + filename).delete();
+      
+      // 移除 UI
+      btn.closest('.model-item').remove();
+      toast('✅ 模型已徹底刪除');
+    } catch(e) {
+      toast('❌ 刪除失敗: ' + e.message);
+      btn.textContent = '刪除';
+      btn.disabled = false;
     }
   }
 
