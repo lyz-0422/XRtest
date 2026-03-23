@@ -9,6 +9,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 if(typeof firebase === 'undefined'){ window.firebase={initializeApp:()=>{},firestore:()=>null}; }
 let _fbdb = null;
@@ -107,6 +108,79 @@ try {
         <span style="color:var(--text-muted); font-size:12px;">請確認 Firestore 安全規則允許讀取，或聯絡明右開放權限。</span>
       </td></tr>`;
     }
+  }
+
+  // ==========================================
+  // 🌟 從 Excel 匯入學生資料並寫入 Firebase
+  // ==========================================
+  async function importExcel(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    toast(`⏳ 正在讀取 ${file.name}...`);
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        // 1. 使用 SheetJS 解析 Excel 檔案
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        // 2. 將 Excel 轉換成 JSON 陣列
+        const json = XLSX.utils.sheet_to_json(worksheet);
+
+        if (json.length === 0) {
+          toast('❌ 檔案內沒有資料，請確認第一列是否有標題');
+          return;
+        }
+
+        // 3. 取得目前登入的老師帳號 (作為資料隔離的標籤)
+        const currentTeacher = document.getElementById('login-user').value || 'teacher01';
+
+        // 4. 批次寫入 Firebase
+        const batch = _fbdb.batch();
+        let count = 0;
+
+        json.forEach(row => {
+          // ★ 這裡對應 Excel 的標題欄位名稱，請老師務必照打：學號、姓名、學校、年級
+          const sid = row['學號'] ? String(row['學號']).trim() : null;
+          const name = row['姓名'] ? String(row['姓名']).trim() : '未命名';
+          const school = row['學校'] ? String(row['學校']).trim() : '';
+          const grade = row['年級'] ? String(row['年級']).trim() : '';
+
+          if (sid) {
+            const ref = _fbdb.collection('Users').doc(sid);
+            batch.set(ref, {
+              studentId: sid,
+              name: name,
+              school: school,
+              grade: grade,
+              role: 'student',
+              teacherId: currentTeacher, // 🛡️ 關鍵：打上這位老師的專屬標籤！
+              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            count++;
+          }
+        });
+
+        // 5. 送出資料
+        await batch.commit();
+        toast(`✅ 成功匯入 ${count} 筆學生資料！`);
+        
+        // 重新載入表格顯示最新資料
+        if (window._loadStudentsFromFirebase) window._loadStudentsFromFirebase();
+
+      } catch (err) {
+        console.error(err);
+        toast('❌ 匯入失敗：' + err.message);
+      }
+    };
+    
+    reader.readAsArrayBuffer(file);
+    // 清空 input，這樣下次選同一個檔案才能再次觸發 onchange
+    event.target.value = '';
   }
 
   // 頁面載入後立即讀取，讓儀表板學生數正確
@@ -2019,7 +2093,15 @@ try {
         <div class="fb-status-bar" style="margin-bottom:20px;">
           <div class="fb-status-dot connected"></div>
           <div>已連線 Firebase：<strong>xrtest-1d213</strong>　集合：<code style="background:rgba(120,150,168,0.12); padding:1px 6px; border-radius:3px; font-size:12px;">Users</code></div>
-          <button class="btn-small" style="margin-left:auto;" onclick="if(window._loadStudentsFromFirebase) window._loadStudentsFromFirebase(); else toast('Firebase 模組載入中，請稍候')">重新整理</button>
+          
+          <div style="margin-left:auto; display:flex; gap:8px;">
+            <button class="btn-small" onclick="if(window._loadStudentsFromFirebase) window._loadStudentsFromFirebase(); else toast('Firebase 模組載入中，請稍候')">重新整理</button>
+            
+            <label class="btn-small" style="color:var(--accent2);border-color:rgba(138,170,142,.4);cursor:pointer;margin:0;">
+              📥 匯入 Excel 學生名單
+              <input type="file" accept=".xlsx, .xls, .csv" style="display:none" onchange="importExcel(event)">
+            </label>
+          </div>
         </div>
 
         <div class="card">
