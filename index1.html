@@ -2346,6 +2346,10 @@ try {
     document.getElementById('login-screen').style.display = 'none';
     const app = document.getElementById('app');
     app.style.display = 'flex';
+
+    // 🌟 關鍵新增：登入成功後，立刻向 Firebase 抓取「這位老師專屬」的學生與儀表板資料！
+    if (typeof loadStudents === 'function') loadStudents();
+    if (typeof loadDashboard === 'function') loadDashboard();
   }
 
   function doLogout() {
@@ -3028,8 +3032,8 @@ try {
           return;
         }
 
-        // 取得目前登入的老師帳號 (作為資料隔離的標籤)
-        const currentTeacher = document.getElementById('login-user').value || 'teacher01';
+        // 取得目前登入的老師帳號
+        const currentTeacher = document.getElementById('login-user').value.trim() || 'teacher01';
         const batch = _fbdb.batch();
         let count = 0;
 
@@ -3055,8 +3059,16 @@ try {
         });
 
         await batch.commit();
-        toast(`✅ 成功匯入 ${count} 筆學生資料！`);
-        if (window._loadStudentsFromFirebase) window._loadStudentsFromFirebase();
+        toast(`✅ 成功匯入 ${count} 筆學生資料！正在更新畫面...`);
+        
+        // 🌟 關鍵修復：給 Firebase 0.5 秒的時間消化資料，然後自動重新讀取學生名單！
+        setTimeout(() => {
+          if (typeof loadStudents === 'function') {
+            loadStudents();
+          } else if (window._loadStudentsFromFirebase) {
+            window._loadStudentsFromFirebase();
+          }
+        }, 500);
 
       } catch (err) {
         console.error(err);
