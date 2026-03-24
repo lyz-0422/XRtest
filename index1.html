@@ -29,49 +29,50 @@ try {
 
 
   // 讀取 Users collection 並渲染到學生表格
+  // 🌟 替換整段 loadStudents 函數
   async function loadStudents() {
     const tbody = document.getElementById('students-tbody');
     const countEl = document.getElementById('fb-student-count');
     const dashCount = document.getElementById('dash-student-count');
     const dashSub   = document.getElementById('dash-student-sub');
+    
     if (!tbody) return;
-
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--text-muted);">從 Firebase 讀取中…</td></tr>`;
 
     try {
-      const snapshot = await _fbdb.collection('Users').get();
+      // 1. 抓取目前登入的老師帳號
+      const currentTeacher = document.getElementById('login-user').value || 'teacher01';
+      
+      // 2. 加上 .where() 條件，只抓這位老師專屬的學生
+      const snapshot = await _fbdb.collection('Users').where('teacherId', '==', currentTeacher).get();
 
-      // ── 更新儀表板學生數 ──
       const total = snapshot.size;
       if (dashCount) dashCount.textContent = total;
-      if (dashSub)   dashSub.innerHTML = `Firebase Users 集合共 <strong style="color:var(--text);">${total}</strong> 筆`;
+      if (dashSub)   dashSub.innerHTML = `我的班級共 <strong style="color:var(--text);">${total}</strong> 位學生`;
 
       if (snapshot.empty) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--text-muted);">Firebase Users 集合目前沒有資料</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--text-muted);">目前沒有屬於 ${currentTeacher} 的學生，請點擊上方「📥 匯入 Excel」</td></tr>`;
+        if (countEl) countEl.textContent = '0';
         return;
       }
 
       const students = [];
       snapshot.forEach(doc => students.push({ id: doc.id, ...doc.data() }));
-
-      // 更新 Firebase 連線頁的學生數
       if (countEl) countEl.textContent = total;
 
-      // 同時讀取 Scores 集合，做出作答進度
-      // 用 OR 邏輯：同一單元只要有任一筆 completed:true 就算完成
-      // studentId 統一轉成字串比對，避免數字/字串型別不一致
+      // 讀取分數進度 (保持不變)
       let scoresMap = {};
       try {
         const sSnap = await _fbdb.collection('Scores').get();
         sSnap.forEach(doc => {
           const d = doc.data();
-          if (!d.studentId) return;
-        const sid = String(d.studentId);
-          if (!scoresMap[sid]) scoresMap[sid] = {};
-          // completed 欄位若不存在（舊資料），但有 score 記錄也算完成
-          const isCompleted = d.completed === true || (d.score !== undefined && d.score >= 0);
-          if (isCompleted) scoresMap[sid][d.unit] = true;
-          else if (!scoresMap[sid][d.unit]) scoresMap[sid][d.unit] = false;
+          if (d.studentId) {
+            const sid = String(d.studentId);
+            if (!scoresMap[sid]) scoresMap[sid] = {};
+            if (d.completed === true || (d.score !== undefined && d.score >= 0)) {
+              scoresMap[sid][d.unit] = true;
+            }
+          }
         });
       } catch(e) {}
 
@@ -80,7 +81,7 @@ try {
         const sid    = String(s.studentId || s.id);
         const school = s.school || '—';
         const grade  = s.grade  || '—';
-        const role   = s.role   || '—';
+        const role   = s.role   || 'student';
         const sc = scoresMap[sid] || {};
         const dot = u => sc[u]
           ? '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--accent2);margin-right:3px;" title="已完成"></span>'
@@ -99,88 +100,13 @@ try {
       }).join('');
 
     } catch (e) {
-      // 更新儀表板顯示錯誤狀態
+      console.error("讀取學生失敗:", e);
       if (dashCount) dashCount.textContent = '⚠';
-      if (dashSub)   dashSub.textContent = 'Firebase 讀取失敗，請確認權限';
-
+      if (dashSub)   dashSub.textContent = 'Firebase 讀取失敗';
       tbody.innerHTML = `<tr><td colspan="7" style="padding:16px; color:var(--accent3); font-size:13px; line-height:1.6;">
-        ⚠ 讀取 Firebase 失敗：${e.message}<br>
-        <span style="color:var(--text-muted); font-size:12px;">請確認 Firestore 安全規則允許讀取，或聯絡明右開放權限。</span>
+        ⚠ 讀取失敗：${e.message}
       </td></tr>`;
     }
-  }
-
-  // ==========================================
-  // 🌟 從 Excel 匯入學生資料並寫入 Firebase
-  // ==========================================
-  async function importExcel(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    toast(`⏳ 正在讀取 ${file.name}...`);
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        // 1. 使用 SheetJS 解析 Excel 檔案
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, {type: 'array'});
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        
-        // 2. 將 Excel 轉換成 JSON 陣列
-        const json = XLSX.utils.sheet_to_json(worksheet);
-
-        if (json.length === 0) {
-          toast('❌ 檔案內沒有資料，請確認第一列是否有標題');
-          return;
-        }
-
-        // 3. 取得目前登入的老師帳號 (作為資料隔離的標籤)
-        const currentTeacher = document.getElementById('login-user').value || 'teacher01';
-
-        // 4. 批次寫入 Firebase
-        const batch = _fbdb.batch();
-        let count = 0;
-
-        json.forEach(row => {
-          // ★ 這裡對應 Excel 的標題欄位名稱，請老師務必照打：學號、姓名、學校、年級
-          const sid = row['學號'] ? String(row['學號']).trim() : null;
-          const name = row['姓名'] ? String(row['姓名']).trim() : '未命名';
-          const school = row['學校'] ? String(row['學校']).trim() : '';
-          const grade = row['年級'] ? String(row['年級']).trim() : '';
-
-          if (sid) {
-            const ref = _fbdb.collection('Users').doc(sid);
-            batch.set(ref, {
-              studentId: sid,
-              name: name,
-              school: school,
-              grade: grade,
-              role: 'student',
-              teacherId: currentTeacher, // 🛡️ 關鍵：打上這位老師的專屬標籤！
-              createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            }, { merge: true });
-            count++;
-          }
-        });
-
-        // 5. 送出資料
-        await batch.commit();
-        toast(`✅ 成功匯入 ${count} 筆學生資料！`);
-        
-        // 重新載入表格顯示最新資料
-        if (window._loadStudentsFromFirebase) window._loadStudentsFromFirebase();
-
-      } catch (err) {
-        console.error(err);
-        toast('❌ 匯入失敗：' + err.message);
-      }
-    };
-    
-    reader.readAsArrayBuffer(file);
-    // 清空 input，這樣下次選同一個檔案才能再次觸發 onchange
-    event.target.value = '';
   }
 
   // 頁面載入後立即讀取，讓儀表板學生數正確
@@ -1592,6 +1518,7 @@ try {
         <div class="user-avatar">AI</div>
         <span>AI 老師</span>
       </div>
+      <a href="index.html" class="btn-logout" style="text-decoration:none;">🏠 首頁</a>
       <button class="btn-logout" onclick="doLogout()">登出</button>
     </div>
   </div>
@@ -1682,6 +1609,19 @@ try {
           </div>
         </div>
 
+        <!-- 聆聽次數統計 -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-title">
+            <span><span class="card-title-icon">🔊</span>學習歷程深度 — 聆聽朗讀次數</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+            學生點擊「🔊 朗讀題目」的次數，次數越多代表該學生對該題需要更多輔助。
+          </div>
+          <div id="dash-listen-area">
+            <div class="dash-loading"><span class="dash-spinner"></span>讀取中…</div>
+          </div>
+        </div>
+
         <!-- 分數記錄總表 -->
         <div class="card" style="margin-bottom:20px;">
           <div class="card-title" style="justify-content:space-between;">
@@ -1722,7 +1662,7 @@ try {
               <span class="format-tag">.jpg</span>
             </div>
           </div>
-          <input type="file" id="file-input" multiple style="display:none" onchange="handleFileSelect(event)">
+          <input type="file" id="file-input" accept=".glb,.gltf,.fbx,.obj,.png,.jpg" multiple style="display:none" onchange="handleFileSelect(event)">
         </div>
 
         <div class="card">
@@ -2414,6 +2354,7 @@ try {
   }
 
   let currentPage = 'dashboard';
+  // 🌟 替換原本的 showPage 函數
   function showPage(page, el) {
     document.getElementById('page-' + currentPage).style.display = 'none';
     document.getElementById('page-' + page).style.display = '';
@@ -2422,12 +2363,11 @@ try {
     el.classList.add('active');
     hideSaveBar();
     
-    if (page === 'students' && window._loadStudentsFromFirebase) {
-      window._loadStudentsFromFirebase();
-    }
-    if (page === 'feedback') {
-      initFeedbackPage();
-    }
+    // 🌟 關鍵：只要老師點擊左邊的選單，就強制該頁面去 Firebase 抓最新資料！
+    if (page === 'dashboard') loadDashboard();
+    if (page === 'students' && window._loadStudentsFromFirebase) window._loadStudentsFromFirebase();
+    if (page === 'feedback') initFeedbackPage();
+    if (page === 'models') loadModelsFromFirebase();
     // 🌟 關鍵新增：切換到模型庫時，自動從 Firebase 讀取！
     if (page === 'models') {
       loadModelsFromFirebase();
@@ -2511,7 +2451,7 @@ try {
   async function processFiles(files) {
     const list = document.getElementById('model-list');
     
-    // 如果畫面上還留著「尚未上傳任何模型」的提示，就把它清空！
+    // 🌟 如果畫面上還留著「尚未上傳任何模型」的提示，就把它清空！
     if (list.innerHTML.includes('尚未上傳任何模型') || list.innerHTML.includes('讀取模型清單中')) {
       list.innerHTML = '';
     }
@@ -2583,7 +2523,14 @@ try {
       }
     }
   }
-  
+
+  function deleteModel(btn) {
+    if (confirm('確定要刪除此模型？')) {
+      btn.closest('.model-item').remove();
+      toast('模型已刪除');
+    }
+  }
+
   // ==========================================
   // 🌟 從資料庫讀取已上傳的模型名單
   // ==========================================
@@ -2650,13 +2597,6 @@ try {
       toast('❌ 刪除失敗: ' + e.message);
       btn.textContent = '刪除';
       btn.disabled = false;
-    }
-  }
-
-  function deleteModel(btn) {
-    if (confirm('確定要刪除此模型？')) {
-      btn.closest('.model-item').remove();
-      toast('模型已刪除');
     }
   }
 
@@ -3063,6 +3003,68 @@ try {
       }
       document.getElementById('fb-test-btn').textContent = '測試連線';
     }, 1400);
+  }
+
+  // ==========================================
+  // 🌟 從 Excel 匯入學生資料並寫入 Firebase
+  // ==========================================
+  async function importExcel(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    toast(`⏳ 正在讀取 ${file.name}...`);
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const json = XLSX.utils.sheet_to_json(worksheet);
+
+        if (json.length === 0) {
+          toast('❌ 檔案內沒有資料，請確認第一列是否有標題');
+          return;
+        }
+
+        // 取得目前登入的老師帳號 (作為資料隔離的標籤)
+        const currentTeacher = document.getElementById('login-user').value || 'teacher01';
+        const batch = _fbdb.batch();
+        let count = 0;
+
+        json.forEach(row => {
+          const sid = row['學號'] ? String(row['學號']).trim() : null;
+          const name = row['姓名'] ? String(row['姓名']).trim() : '未命名';
+          const school = row['學校'] ? String(row['學校']).trim() : '';
+          const grade = row['年級'] ? String(row['年級']).trim() : '';
+
+          if (sid) {
+            const ref = _fbdb.collection('Users').doc(sid);
+            batch.set(ref, {
+              studentId: sid,
+              name: name,
+              school: school,
+              grade: grade,
+              role: 'student',
+              teacherId: currentTeacher, // 🛡️ 綁定老師帳號
+              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            count++;
+          }
+        });
+
+        await batch.commit();
+        toast(`✅ 成功匯入 ${count} 筆學生資料！`);
+        if (window._loadStudentsFromFirebase) window._loadStudentsFromFirebase();
+
+      } catch (err) {
+        console.error(err);
+        toast('❌ 匯入失敗：' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = ''; // 清空 input
   }
 
   // ── 學生回饋表單頁 ──
@@ -3582,12 +3584,75 @@ try {
     if (!_fbdb) { toast('Firebase 未連線'); return; }
 
     // 同時讀取三個集合
-    const [usersSnap, scoresSnap, activitiesSnap] = await Promise.all([
+    const [usersSnap, scoresSnap, activitiesSnap, listenSnap] = await Promise.all([
       _fbdb.collection('Users').get().catch(()=>null),
       _fbdb.collection('Scores').get().catch(()=>null),
       _fbdb.collection('Activities').orderBy('timestamp','desc').limit(10).get().catch(()=>null),
+      _fbdb.collection('ListenEvents').get().catch(()=>null),
     ]);
     // Answers 集合不再讀取（簡答題已改為選擇題，無複審需求）
+
+    // ==========================================
+  // 🌟 從 Excel 匯入學生資料並寫入 Firebase
+  // ==========================================
+  async function importExcel(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    toast(`⏳ 正在讀取 ${file.name}...`);
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const json = XLSX.utils.sheet_to_json(worksheet);
+
+        if (json.length === 0) {
+          toast('❌ 檔案內沒有資料，請確認第一列是否有標題');
+          return;
+        }
+
+        // 取得目前登入的老師帳號 (作為資料隔離的標籤)
+        const currentTeacher = document.getElementById('login-user').value || 'teacher01';
+        const batch = _fbdb.batch();
+        let count = 0;
+
+        json.forEach(row => {
+          const sid = row['學號'] ? String(row['學號']).trim() : null;
+          const name = row['姓名'] ? String(row['姓名']).trim() : '未命名';
+          const school = row['學校'] ? String(row['學校']).trim() : '';
+          const grade = row['年級'] ? String(row['年級']).trim() : '';
+
+          if (sid) {
+            const ref = _fbdb.collection('Users').doc(sid);
+            batch.set(ref, {
+              studentId: sid,
+              name: name,
+              school: school,
+              grade: grade,
+              role: 'student',
+              teacherId: currentTeacher, // 🛡️ 綁定老師帳號
+              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            count++;
+          }
+        });
+
+        await batch.commit();
+        toast(`✅ 成功匯入 ${count} 筆學生資料！`);
+        if (window._loadStudentsFromFirebase) window._loadStudentsFromFirebase();
+
+      } catch (err) {
+        console.error(err);
+        toast('❌ 匯入失敗：' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = ''; // 清空 input
+  }
 
     // ── 學生數 ──
     const totalStudents = usersSnap ? usersSnap.size : 0;
@@ -3671,6 +3736,105 @@ try {
       </div>`;
     });
     document.getElementById('dash-unit-progress').innerHTML = unitHtml || '<div class="dash-loading">尚無完成記錄</div>';
+
+    // ── 聆聽次數統計（按作答回合分組）──
+    const listenEl = document.getElementById('dash-listen-area');
+    if (listenEl) {
+      if (!listenSnap || listenSnap.empty) {
+        listenEl.innerHTML = '<div class="dash-loading">尚無聆聽記錄</div>';
+      } else {
+        // 整理：{ sid → { name, sessions: { sessionId → { ts, questions: { qid → { unit, count } } } } } }
+        const lmap = {};
+        listenSnap.forEach(doc => {
+          const d = doc.data();
+          if (!d.studentId) return;
+          const sid  = String(d.studentId);
+          const sess = d.sessionId || 'legacy'; // 舊資料沒有 sessionId 歸到 legacy
+          const ts   = d.timestamp?.seconds || 0;
+          if (!lmap[sid]) lmap[sid] = { name: d.studentName||sid, sessions:{} };
+          if (!lmap[sid].sessions[sess]) lmap[sid].sessions[sess] = { ts, questions:{} };
+          if (ts > lmap[sid].sessions[sess].ts) lmap[sid].sessions[sess].ts = ts;
+          const qid = d.question || 'unknown';
+          const q   = lmap[sid].sessions[sess].questions;
+          if (!q[qid]) q[qid] = { unit: d.unit||'', count:0 };
+          q[qid].count += (d.listenCount||1);
+        });
+
+        const unitLabel = { 'qt1':'單元1','qt2':'單元2','qt3':'單元3' };
+        const qLabel = qid => ({
+          'u1q0':'第1題','u2q0':'第1題','u2q1':'第2題','u2q2':'第3題','u2q3':'第4題',
+          'u3q0':'第1題','u3q1':'第2題','u3q2':'第3題'
+        }[qid] || qid);
+
+        let lHtml = `<div style="overflow-x:auto;"><table class="score-table">
+          <thead><tr>
+            <th>姓名</th><th>作答</th><th>各題聆聽次數</th><th>合計</th><th></th>
+          </tr></thead><tbody>`;
+
+        Object.entries(lmap).forEach(([sid, info], si) => {
+          // 按時間排序（新→舊）
+          const sessions = Object.entries(info.sessions)
+            .sort((a,b) => b[1].ts - a[1].ts);
+
+          sessions.forEach(([ sessId, sessData ], si2 ) => {
+            const qs = Object.entries(sessData.questions)
+              .sort((a,b) => a[0].localeCompare(b[0]));
+            const total = qs.reduce((s,[,v]) => s + v.count, 0);
+            const ts    = sessData.ts;
+            const timeStr = ts > 0
+              ? new Date(ts*1000).toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
+              : '—';
+
+            // 每題摘要（inline）
+            const qSummary = qs.map(([qid, qinfo]) =>
+              `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:8px;">
+                <span style="font-size:11px;color:var(--text-muted);">${unitLabel[qinfo.unit]||''} ${qLabel(qid)}</span>
+                <span class="score-pill-sm ${qinfo.count>=5?'sp-low':qinfo.count>=3?'sp-mid':'sp-high'}">${qinfo.count}次</span>
+              </span>`
+            ).join('');
+
+            const isLatest = si2 === 0;
+            lHtml += `<tr style="${!isLatest?'background:rgba(120,150,168,.04);':''}">
+              <td style="font-weight:600;${!isLatest?'color:var(--text-dim);font-size:12px;padding-left:20px;':''}">${isLatest ? info.name : ''}</td>
+              <td style="font-size:11px;color:var(--text-dim);">${timeStr}</td>
+              <td>${qSummary}</td>
+              <td><strong style="color:var(--accent4);">${total} 次</strong></td>
+              <td>${isLatest && sessions.length>1
+                ? `<button onclick="toggleHistory(this,'ll-${si}')" style="background:none;border:1px solid var(--border);border-radius:5px;padding:3px 9px;font-size:11px;font-family:inherit;color:var(--text-muted);cursor:pointer;" data-open="0">▸ ${sessions.length-1} 筆歷史</button>`
+                : ''}</td>
+            </tr>`;
+
+            // 歷史回合預設隱藏
+            if (!isLatest) {
+              // 已包含在 class ll-${si} hist-row，需在第一行以外都加上
+            }
+          });
+        });
+
+        lHtml += '</tbody></table></div>';
+        listenEl.innerHTML = Object.keys(lmap).length === 0
+          ? '<div class="dash-loading">尚無聆聽記錄</div>' : lHtml;
+
+        // 把非第一回合的列加上 hist-row class（動態設定）
+        Object.entries(lmap).forEach(([sid, info], si) => {
+          const sessions = Object.entries(info.sessions).sort((a,b) => b[1].ts - a[1].ts);
+          if (sessions.length <= 1) return;
+          // 找到這個學生的所有 tr，跳過第一個
+          const rows = listenEl.querySelectorAll('tr');
+          let found = 0;
+          rows.forEach(row => {
+            const nameCell = row.cells[0];
+            if (nameCell && nameCell.textContent.trim() === info.name) found = 0;
+            if (found > 0) {
+              row.classList.add('ll-' + si, 'hist-row');
+              row.style.display = 'none';
+            }
+            if (nameCell && nameCell.textContent.trim() === info.name) found = 1;
+            else if (found > 0) found++;
+          });
+        });
+      }
+    }
 
     // ── 活動時間軸 ──
     const typeLabel = { login:'登入', unit_complete:'完成單元', all_complete:'🏆 全關破' };
