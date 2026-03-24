@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
 <script>
 if(typeof firebase === 'undefined'){ window.firebase={initializeApp:()=>{},firestore:()=>null}; }
 let _fbdb = null;
@@ -1716,13 +1717,18 @@ try {
             <button onclick="closeModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);line-height:1;">✕</button>
           </div>
           <!-- 3D 預覽區（示意框） -->
-          <div id="modal-preview-box" style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; height:220px; display:flex; flex-direction:column; align-items:center; justify-content:center; margin-bottom:18px; position:relative; overflow:hidden;">
+          <div id="modal-preview-box" style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; height:280px; display:flex; flex-direction:column; align-items:center; justify-content:center; margin-bottom:18px; position:relative; overflow:hidden;">
+            
+            <model-viewer id="real-3d-viewer" 
+              style="width: 100%; height: 100%; display: none;" 
+              auto-rotate 
+              camera-controls 
+              shadow-intensity="1" 
+              environment-image="neutral">
+            </model-viewer>
+            
             <div id="modal-icon" style="font-size:64px; margin-bottom:10px;">🧲</div>
-            <div style="font-size:12px; color:var(--text-muted);">3D 預覽（需連接 WebGL 渲染器）</div>
-            <div style="position:absolute; bottom:10px; right:12px; display:flex; gap:6px;">
-              <button class="btn-small" style="font-size:11px;">旋轉 ↻</button>
-              <button class="btn-small" style="font-size:11px;">全螢幕 ⛶</button>
-            </div>
+            <div id="modal-hint" style="font-size:12px; color:var(--text-muted);">載入中...</div>
           </div>
           <div style="font-size:13px; color:var(--text-muted); margin-bottom:4px;" id="modal-filename"></div>
           <div style="font-size:12px; color:var(--text-dim); margin-bottom:18px;" id="modal-filesize"></div>
@@ -2566,7 +2572,7 @@ try {
           </div>
           <span class="model-status status-active">已上傳雲端</span>
           <div class="model-actions">
-            <button class="btn-small" onclick="previewModel('${d.name}', '${icon}', '${d.name}', '${d.size}')">預覽</button>
+            <button class="btn-small" onclick="previewModel('${d.name}', '${icon}', '${d.name}', '${d.size}', '${d.url}')">預覽</button>
             <button class="btn-small btn-danger" onclick="deleteModelFromFirebase('${d.name}', this)">刪除</button>
           </div>
         </div>`;
@@ -2605,17 +2611,42 @@ try {
   }
 
   // ── 3D 模型預覽 Modal ──
-  function previewModel(name, icon, filename, size) {
+  // ── 3D 模型預覽 Modal ──
+  function previewModel(name, icon, filename, size, url) {
     document.getElementById('modal-title').textContent = '模型預覽・' + name;
-    document.getElementById('modal-icon').textContent = icon;
     document.getElementById('modal-filename').textContent = filename;
-    document.getElementById('modal-filesize').textContent = size + '　・　GLB 格式';
-    const m = document.getElementById('model-modal');
-    m.style.display = 'flex';
+    document.getElementById('modal-filesize').textContent = size;
+    
+    const viewer = document.getElementById('real-3d-viewer');
+    const iconDiv = document.getElementById('modal-icon');
+    const hintDiv = document.getElementById('modal-hint');
+
+    // 判斷是否為 3D 模型 (.glb 或 .gltf)
+    if (filename.toLowerCase().endsWith('.glb') || filename.toLowerCase().endsWith('.gltf')) {
+      iconDiv.style.display = 'none';
+      hintDiv.style.display = 'none';
+      viewer.style.display = 'block';
+      // 將 Firebase 的真實下載網址餵給 viewer！
+      if (url) viewer.src = url; 
+    } else {
+      // 如果是圖片或其他檔案，就顯示圖示
+      viewer.style.display = 'none';
+      viewer.src = '';
+      iconDiv.style.display = 'block';
+      iconDiv.textContent = icon;
+      hintDiv.style.display = 'block';
+      hintDiv.textContent = '此格式不支援 3D 互動預覽';
+    }
+
+    document.getElementById('model-modal').style.display = 'flex';
   }
+
   function closeModal() {
     document.getElementById('model-modal').style.display = 'none';
+    // 關閉時清空模型，節省效能
+    document.getElementById('real-3d-viewer').src = '';
   }
+  
   function confirmModelAssign() {
     const checks = document.querySelectorAll('#modal-unit-assign input:checked');
     const units = Array.from(checks).map(c => '單元' + c.value).join('、');
