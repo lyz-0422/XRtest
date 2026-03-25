@@ -1474,6 +1474,35 @@ try {
   .fb-resp-a { color: var(--text); font-weight: 600; }
 </style>
 
+/* ── 清除測試資料 ── */
+  .reset-card {
+    background: var(--surface2);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 14px;
+    width: 130px;
+    text-align: center;
+  }
+  .reset-icon { font-size: 2em; margin-bottom: 6px; }
+  .reset-label { font-weight: 700; font-size: 14px; margin-bottom: 3px; }
+  .reset-desc { font-size: 11px; color: var(--text-dim); margin-bottom: 12px; font-family: monospace; }
+  .btn-reset {
+    background: var(--accent3);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 0;
+    width: 100%;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 500;
+    transition: opacity .15s;
+  }
+  .btn-reset:hover { opacity: .8; }
+  .btn-reset-all { background: #b05050; font-weight: 700; }
+  .btn-reset:disabled { opacity: .5; cursor: not-allowed; }
+
 </head>
 <body>
 
@@ -1555,7 +1584,76 @@ try {
       <div class="nav-item" onclick="showPage('firebase', this)">
         <span class="nav-icon">🔌</span><span>Firebase 連線</span>
       </div>
+      <div class="nav-item" onclick="showPage('reset', this)">
+        <span class="nav-icon">🗑️</span><span>清除測試資料</span>
+      </div>
     </div>
+
+    <!-- ── 清除測試資料 ── -->
+      <div id="page-reset" style="display:none;">
+        <div class="page-header">
+          <div class="page-title">🗑️ 清除測試資料</div>
+          <div class="page-desc">開發階段使用，快速重置 Firebase 各集合資料，不需手動到 Firestore 刪除</div>
+        </div>
+
+        <div class="card" style="border: 1.5px dashed var(--accent3);">
+          <div style="background:rgba(176,138,132,.08);border:1px solid rgba(176,138,132,.25);border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:var(--accent3);">
+            ⚠️ 以下操作會直接從 Firebase 刪除資料，<strong>無法復原</strong>，請確認後再執行。
+          </div>
+
+          <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:24px;">
+
+            <div class="reset-card">
+              <div class="reset-icon">📋</div>
+              <div class="reset-label">活動紀錄</div>
+              <div class="reset-desc">Activities</div>
+              <button class="btn-reset" onclick="clearCollection('Activities', this)">清除</button>
+            </div>
+
+            <div class="reset-card">
+              <div class="reset-icon">🔊</div>
+              <div class="reset-label">聆聽次數</div>
+              <div class="reset-desc">ListenEvents</div>
+              <button class="btn-reset" onclick="clearCollection('ListenEvents', this)">清除</button>
+            </div>
+
+            <div class="reset-card">
+              <div class="reset-icon">🏅</div>
+              <div class="reset-label">分數紀錄</div>
+              <div class="reset-desc">Scores</div>
+              <button class="btn-reset" onclick="clearCollection('Scores', this)">清除</button>
+            </div>
+
+            <div class="reset-card">
+              <div class="reset-icon">✏️</div>
+              <div class="reset-label">答題紀錄</div>
+              <div class="reset-desc">Answers</div>
+              <button class="btn-reset" onclick="clearCollection('Answers', this)">清除</button>
+            </div>
+
+            <div class="reset-card">
+              <div class="reset-icon">📝</div>
+              <div class="reset-label">回饋問卷</div>
+              <div class="reset-desc">Feedback</div>
+              <button class="btn-reset" onclick="clearCollection('Feedback', this)">清除</button>
+            </div>
+
+            <div class="reset-card" style="border-color:var(--accent3);">
+              <div class="reset-icon">💥</div>
+              <div class="reset-label">全部清除</div>
+              <div class="reset-desc">以上五個集合</div>
+              <button class="btn-reset btn-reset-all" onclick="clearAll()">全部清除</button>
+            </div>
+
+          </div>
+
+          <!-- 執行 log -->
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;min-height:80px;">
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-weight:700;letter-spacing:.5px;">執行紀錄</div>
+            <div id="reset-log" style="font-size:13px;color:var(--text-muted);line-height:2;">— 尚未執行任何操作 —</div>
+          </div>
+        </div>
+      </div>
 
     <!-- Pages container -->
     <div class="main-content">
