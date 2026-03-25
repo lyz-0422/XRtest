@@ -8,6 +8,9 @@
 <!-- Firebase compat SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
 <script>
 if(typeof firebase === 'undefined'){ window.firebase={initializeApp:()=>{},firestore:()=>null}; }
 let _fbdb = null;
@@ -27,49 +30,50 @@ try {
 
 
   // 讀取 Users collection 並渲染到學生表格
+  // 🌟 替換整段 loadStudents 函數
   async function loadStudents() {
     const tbody = document.getElementById('students-tbody');
     const countEl = document.getElementById('fb-student-count');
     const dashCount = document.getElementById('dash-student-count');
     const dashSub   = document.getElementById('dash-student-sub');
+    
     if (!tbody) return;
-
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--text-muted);">從 Firebase 讀取中…</td></tr>`;
 
     try {
-      const snapshot = await _fbdb.collection('Users').get();
+      // 1. 抓取目前登入的老師帳號
+      const currentTeacher = document.getElementById('login-user').value || 'teacher01';
+      
+      // 2. 加上 .where() 條件，只抓這位老師專屬的學生
+      const snapshot = await _fbdb.collection('Users').where('teacherId', '==', currentTeacher).get();
 
-      // ── 更新儀表板學生數 ──
       const total = snapshot.size;
       if (dashCount) dashCount.textContent = total;
-      if (dashSub)   dashSub.innerHTML = `Firebase Users 集合共 <strong style="color:var(--text);">${total}</strong> 筆`;
+      if (dashSub)   dashSub.innerHTML = `我的班級共 <strong style="color:var(--text);">${total}</strong> 位學生`;
 
       if (snapshot.empty) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--text-muted);">Firebase Users 集合目前沒有資料</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--text-muted);">目前沒有屬於 ${currentTeacher} 的學生，請點擊上方「📥 匯入 Excel」</td></tr>`;
+        if (countEl) countEl.textContent = '0';
         return;
       }
 
       const students = [];
       snapshot.forEach(doc => students.push({ id: doc.id, ...doc.data() }));
-
-      // 更新 Firebase 連線頁的學生數
       if (countEl) countEl.textContent = total;
 
-      // 同時讀取 Scores 集合，做出作答進度
-      // 用 OR 邏輯：同一單元只要有任一筆 completed:true 就算完成
-      // studentId 統一轉成字串比對，避免數字/字串型別不一致
+      // 讀取分數進度 (保持不變)
       let scoresMap = {};
       try {
         const sSnap = await _fbdb.collection('Scores').get();
         sSnap.forEach(doc => {
           const d = doc.data();
-          if (!d.studentId) return;
-        const sid = String(d.studentId);
-          if (!scoresMap[sid]) scoresMap[sid] = {};
-          // completed 欄位若不存在（舊資料），但有 score 記錄也算完成
-          const isCompleted = d.completed === true || (d.score !== undefined && d.score >= 0);
-          if (isCompleted) scoresMap[sid][d.unit] = true;
-          else if (!scoresMap[sid][d.unit]) scoresMap[sid][d.unit] = false;
+          if (d.studentId) {
+            const sid = String(d.studentId);
+            if (!scoresMap[sid]) scoresMap[sid] = {};
+            if (d.completed === true || (d.score !== undefined && d.score >= 0)) {
+              scoresMap[sid][d.unit] = true;
+            }
+          }
         });
       } catch(e) {}
 
@@ -78,7 +82,7 @@ try {
         const sid    = String(s.studentId || s.id);
         const school = s.school || '—';
         const grade  = s.grade  || '—';
-        const role   = s.role   || '—';
+        const role   = s.role   || 'student';
         const sc = scoresMap[sid] || {};
         const dot = u => sc[u]
           ? '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--accent2);margin-right:3px;" title="已完成"></span>'
@@ -97,13 +101,11 @@ try {
       }).join('');
 
     } catch (e) {
-      // 更新儀表板顯示錯誤狀態
+      console.error("讀取學生失敗:", e);
       if (dashCount) dashCount.textContent = '⚠';
-      if (dashSub)   dashSub.textContent = 'Firebase 讀取失敗，請確認權限';
-
+      if (dashSub)   dashSub.textContent = 'Firebase 讀取失敗';
       tbody.innerHTML = `<tr><td colspan="7" style="padding:16px; color:var(--accent3); font-size:13px; line-height:1.6;">
-        ⚠ 讀取 Firebase 失敗：${e.message}<br>
-        <span style="color:var(--text-muted); font-size:12px;">請確認 Firestore 安全規則允許讀取，或聯絡明右開放權限。</span>
+        ⚠ 讀取失敗：${e.message}
       </td></tr>`;
     }
   }
@@ -1661,7 +1663,7 @@ try {
               <span class="format-tag">.jpg</span>
             </div>
           </div>
-          <input type="file" id="file-input" style="display:none" onchange="handleFileSelect(event)">
+          <input type="file" id="file-input" accept=".glb,.gltf,.fbx,.obj,.png,.jpg" multiple style="display:none" onchange="handleFileSelect(event)">
         </div>
 
         <div class="card">
@@ -1715,13 +1717,18 @@ try {
             <button onclick="closeModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);line-height:1;">✕</button>
           </div>
           <!-- 3D 預覽區（示意框） -->
-          <div id="modal-preview-box" style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; height:220px; display:flex; flex-direction:column; align-items:center; justify-content:center; margin-bottom:18px; position:relative; overflow:hidden;">
+          <div id="modal-preview-box" style="background:var(--surface2); border:1px solid var(--border); border-radius:10px; height:280px; display:flex; flex-direction:column; align-items:center; justify-content:center; margin-bottom:18px; position:relative; overflow:hidden;">
+            
+            <model-viewer id="real-3d-viewer" 
+              style="width: 100%; height: 100%; display: none;" 
+              auto-rotate 
+              camera-controls 
+              shadow-intensity="1" 
+              environment-image="neutral">
+            </model-viewer>
+            
             <div id="modal-icon" style="font-size:64px; margin-bottom:10px;">🧲</div>
-            <div style="font-size:12px; color:var(--text-muted);">3D 預覽（需連接 WebGL 渲染器）</div>
-            <div style="position:absolute; bottom:10px; right:12px; display:flex; gap:6px;">
-              <button class="btn-small" style="font-size:11px;">旋轉 ↻</button>
-              <button class="btn-small" style="font-size:11px;">全螢幕 ⛶</button>
-            </div>
+            <div id="modal-hint" style="font-size:12px; color:var(--text-muted);">載入中...</div>
           </div>
           <div style="font-size:13px; color:var(--text-muted); margin-bottom:4px;" id="modal-filename"></div>
           <div style="font-size:12px; color:var(--text-dim); margin-bottom:18px;" id="modal-filesize"></div>
@@ -2032,7 +2039,15 @@ try {
         <div class="fb-status-bar" style="margin-bottom:20px;">
           <div class="fb-status-dot connected"></div>
           <div>已連線 Firebase：<strong>xrtest-1d213</strong>　集合：<code style="background:rgba(120,150,168,0.12); padding:1px 6px; border-radius:3px; font-size:12px;">Users</code></div>
-          <button class="btn-small" style="margin-left:auto;" onclick="if(window._loadStudentsFromFirebase) window._loadStudentsFromFirebase(); else toast('Firebase 模組載入中，請稍候')">重新整理</button>
+          
+          <div style="margin-left:auto; display:flex; gap:8px;">
+            <button class="btn-small" onclick="if(window._loadStudentsFromFirebase) window._loadStudentsFromFirebase(); else toast('Firebase 模組載入中，請稍候')">重新整理</button>
+            
+            <label class="btn-small" style="color:var(--accent2);border-color:rgba(138,170,142,.4);cursor:pointer;margin:0;">
+              📥 匯入 Excel 學生名單
+              <input type="file" accept=".xlsx, .xls, .csv" style="display:none" onchange="importExcel(event)">
+            </label>
+          </div>
         </div>
 
         <div class="card">
@@ -2337,6 +2352,10 @@ try {
     document.getElementById('login-screen').style.display = 'none';
     const app = document.getElementById('app');
     app.style.display = 'flex';
+
+    // 🌟 關鍵新增：登入成功後，立刻向 Firebase 抓取「這位老師專屬」的學生與儀表板資料！
+    if (typeof loadStudents === 'function') loadStudents();
+    if (typeof loadDashboard === 'function') loadDashboard();
   }
 
   function doLogout() {
@@ -2345,6 +2364,7 @@ try {
   }
 
   let currentPage = 'dashboard';
+  // 🌟 替換原本的 showPage 函數
   function showPage(page, el) {
     document.getElementById('page-' + currentPage).style.display = 'none';
     document.getElementById('page-' + page).style.display = '';
@@ -2352,13 +2372,15 @@ try {
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
     hideSaveBar();
-    // 切換到學生頁時自動從 Firebase 讀取
-    if (page === 'students' && window._loadStudentsFromFirebase) {
-      window._loadStudentsFromFirebase();
-    }
-    // 切換到回饋頁時自動載入問卷設計器與回饋記錄
-    if (page === 'feedback') {
-      initFeedbackPage();
+    
+    // 🌟 關鍵：只要老師點擊左邊的選單，就強制該頁面去 Firebase 抓最新資料！
+    if (page === 'dashboard') loadDashboard();
+    if (page === 'students' && window._loadStudentsFromFirebase) window._loadStudentsFromFirebase();
+    if (page === 'feedback') initFeedbackPage();
+    if (page === 'models') loadModelsFromFirebase();
+    // 🌟 關鍵新增：切換到模型庫時，自動從 Firebase 讀取！
+    if (page === 'models') {
+      loadModelsFromFirebase();
     }
   }
 
@@ -2435,29 +2457,81 @@ try {
     processFiles(e.target.files);
   }
 
-  function processFiles(files) {
+  // 替換原本的 processFiles 函數
+  async function processFiles(files) {
     const list = document.getElementById('model-list');
-    Array.from(files).forEach(f => {
+    
+    // 🌟 如果畫面上還留著「尚未上傳任何模型」的提示，就把它清空！
+    if (list.innerHTML.includes('尚未上傳任何模型') || list.innerHTML.includes('讀取模型清單中')) {
+      list.innerHTML = '';
+    }
+
+    // 確認有沒有初始化 Storage
+    if (!window._fbstorage) {
+      window._fbstorage = firebase.storage();
+    }
+
+    for (let f of files) {
+      // 產生一個唯一 ID 方便控制狀態
+      const safeId = 'status-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+      const icon = f.name.endsWith('.png') || f.name.endsWith('.jpg') ? '🖼️' : '🧊';
+
+      // 1. 先在畫面上產生一個「處理中」的區塊
       const item = document.createElement('div');
       item.className = 'model-item';
-      item.style.animation = 'fadeUp 0.3s ease both';
-      item.innerHTML = `<div class="model-thumb">📁</div>
+      item.innerHTML = `<div class="model-thumb">${icon}</div>
         <div class="model-info">
           <div class="model-name">${f.name}</div>
-          <div class="model-meta">${(f.size/1024/1024).toFixed(1)} MB・剛剛上傳</div>
+          <div class="model-meta" id="meta-${safeId}">${(f.size/1024/1024).toFixed(1)} MB・上傳中...</div>
         </div>
-        <span class="model-status status-draft">處理中</span>
+        <span class="model-status status-draft" id="${safeId}">上傳中 ⏳</span>
         <div class="model-actions">
-          <button class="btn-small">預覽</button>
-          <button class="btn-small btn-danger" onclick="deleteModel(this)">刪除</button>
+          <button class="btn-small" onclick="previewModel('${f.name}', '${icon}', '${f.name}', '${(f.size/1024/1024).toFixed(1)} MB')">預覽</button>
+          <button class="btn-small btn-danger" onclick="deleteModelFromFirebase('${f.name}', this)">刪除</button>
         </div>`;
-      list.appendChild(item);
-      setTimeout(() => {
-        item.querySelector('.model-status').className = 'model-status status-active';
-        item.querySelector('.model-status').textContent = '已啟用';
-      }, 1500);
-    });
-    toast(`已上傳 ${files.length} 個檔案`);
+      // 插在清單的最上面
+      list.insertBefore(item, list.firstChild);
+
+      // 2. 開始真正上傳到 Firebase Storage + 寫入 Firestore
+      try {
+        const storageRef = window._fbstorage.ref();
+        const fileRef = storageRef.child('models/' + f.name);
+        
+        // 執行上傳
+        await fileRef.put(f);
+        const downloadURL = await fileRef.getDownloadURL();
+        
+        // 🌟 關鍵新增：把模型資訊存到 Firestore 資料庫的 Models 集合裡！
+        await _fbdb.collection('Models').doc(f.name).set({
+            name: f.name,
+            size: (f.size/1024/1024).toFixed(1) + ' MB',
+            url: downloadURL,
+            uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 更新畫面狀態為已啟用
+        const statusBadge = document.getElementById(safeId);
+        if (statusBadge) {
+          statusBadge.className = 'model-status status-active';
+          statusBadge.textContent = '已上傳雲端';
+        }
+        const metaInfo = document.getElementById(`meta-${safeId}`);
+        if (metaInfo) {
+          metaInfo.textContent = `${(f.size/1024/1024).toFixed(1)} MB・剛剛上傳`;
+        }
+        toast(`✅ ${f.name} 上傳成功！`);
+
+      } catch (error) {
+        console.error("上傳失敗:", error);
+        toast(`❌ ${f.name} 上傳失敗: ${error.message}`);
+        const statusBadge = document.getElementById(safeId);
+        if (statusBadge) {
+          statusBadge.className = 'model-status status-draft';
+          statusBadge.textContent = '上傳失敗';
+          statusBadge.style.color = 'red';
+        }
+      }
+    }
   }
 
   function deleteModel(btn) {
@@ -2467,18 +2541,112 @@ try {
     }
   }
 
-  // ── 3D 模型預覽 Modal ──
-  function previewModel(name, icon, filename, size) {
-    document.getElementById('modal-title').textContent = '模型預覽・' + name;
-    document.getElementById('modal-icon').textContent = icon;
-    document.getElementById('modal-filename').textContent = filename;
-    document.getElementById('modal-filesize').textContent = size + '　・　GLB 格式';
-    const m = document.getElementById('model-modal');
-    m.style.display = 'flex';
+  // ==========================================
+  // 🌟 從資料庫讀取已上傳的模型名單
+  // ==========================================
+  async function loadModelsFromFirebase() {
+    if (!_fbdb) return;
+    const list = document.getElementById('model-list');
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">讀取模型清單中...</div>';
+    
+    try {
+      // 照上傳時間排序，最新的在上面
+      const snap = await _fbdb.collection('Models').orderBy('uploadedAt', 'desc').get();
+      
+      if (snap.empty) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">尚未上傳任何模型</div>';
+        return;
+      }
+
+      let html = '';
+      snap.forEach(doc => {
+        const d = doc.data();
+        const icon = d.name.endsWith('.png') || d.name.endsWith('.jpg') ? '🖼️' : '🧊';
+        // 渲染每一筆模型
+        html += `
+        <div class="model-item">
+          <div class="model-thumb">${icon}</div>
+          <div class="model-info">
+            <div class="model-name">${d.name}</div>
+            <div class="model-meta">${d.size}</div>
+          </div>
+          <span class="model-status status-active">已上傳雲端</span>
+          <div class="model-actions">
+            <button class="btn-small" onclick="previewModel('${d.name}', '${icon}', '${d.name}', '${d.size}', '${d.url}')">預覽</button>
+            <button class="btn-small btn-danger" onclick="deleteModelFromFirebase('${d.name}', this)">刪除</button>
+          </div>
+        </div>`;
+      });
+      list.innerHTML = html;
+    } catch(e) {
+      list.innerHTML = `<div style="color:var(--accent3);padding:20px;">讀取失敗: ${e.message}</div>`;
+    }
   }
+
+  // ==========================================
+  // 🌟 刪除雲端硬碟檔案與資料庫紀錄
+  // ==========================================
+  async function deleteModelFromFirebase(filename, btn) {
+    if (!confirm(`確定要徹底刪除 ${filename} 嗎？`)) return;
+    
+    btn.textContent = '刪除中...';
+    btn.disabled = true;
+    
+    try {
+      // 1. 刪除資料庫紀錄
+      await _fbdb.collection('Models').doc(filename).delete();
+      
+      // 2. 刪除 Storage 實體檔案
+      if (!window._fbstorage) window._fbstorage = firebase.storage();
+      await window._fbstorage.ref('models/' + filename).delete();
+      
+      // 移除 UI
+      btn.closest('.model-item').remove();
+      toast('✅ 模型已徹底刪除');
+    } catch(e) {
+      toast('❌ 刪除失敗: ' + e.message);
+      btn.textContent = '刪除';
+      btn.disabled = false;
+    }
+  }
+
+  // ── 3D 模型預覽 Modal ──
+  // ── 3D 模型預覽 Modal ──
+  function previewModel(name, icon, filename, size, url) {
+    document.getElementById('modal-title').textContent = '模型預覽・' + name;
+    document.getElementById('modal-filename').textContent = filename;
+    document.getElementById('modal-filesize').textContent = size;
+    
+    const viewer = document.getElementById('real-3d-viewer');
+    const iconDiv = document.getElementById('modal-icon');
+    const hintDiv = document.getElementById('modal-hint');
+
+    // 判斷是否為 3D 模型 (.glb 或 .gltf)
+    if (filename.toLowerCase().endsWith('.glb') || filename.toLowerCase().endsWith('.gltf')) {
+      iconDiv.style.display = 'none';
+      hintDiv.style.display = 'none';
+      viewer.style.display = 'block';
+      // 將 Firebase 的真實下載網址餵給 viewer！
+      if (url) viewer.src = url; 
+    } else {
+      // 如果是圖片或其他檔案，就顯示圖示
+      viewer.style.display = 'none';
+      viewer.src = '';
+      iconDiv.style.display = 'block';
+      iconDiv.textContent = icon;
+      hintDiv.style.display = 'block';
+      hintDiv.textContent = '此格式不支援 3D 互動預覽';
+    }
+
+    document.getElementById('model-modal').style.display = 'flex';
+  }
+
   function closeModal() {
     document.getElementById('model-modal').style.display = 'none';
+    // 關閉時清空模型，節省效能
+    document.getElementById('real-3d-viewer').src = '';
   }
+  
   function confirmModelAssign() {
     const checks = document.querySelectorAll('#modal-unit-assign input:checked');
     const units = Array.from(checks).map(c => '單元' + c.value).join('、');
@@ -2870,6 +3038,76 @@ try {
       }
       document.getElementById('fb-test-btn').textContent = '測試連線';
     }, 1400);
+  }
+
+  // ==========================================
+  // 🌟 從 Excel 匯入學生資料並寫入 Firebase
+  // ==========================================
+  async function importExcel(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    toast(`⏳ 正在讀取 ${file.name}...`);
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const json = XLSX.utils.sheet_to_json(worksheet);
+
+        if (json.length === 0) {
+          toast('❌ 檔案內沒有資料，請確認第一列是否有標題');
+          return;
+        }
+
+        // 取得目前登入的老師帳號
+        const currentTeacher = document.getElementById('login-user').value.trim() || 'teacher01';
+        const batch = _fbdb.batch();
+        let count = 0;
+
+        json.forEach(row => {
+          const sid = row['學號'] ? String(row['學號']).trim() : null;
+          const name = row['姓名'] ? String(row['姓名']).trim() : '未命名';
+          const school = row['學校'] ? String(row['學校']).trim() : '';
+          const grade = row['年級'] ? String(row['年級']).trim() : '';
+
+          if (sid) {
+            const ref = _fbdb.collection('Users').doc(sid);
+            batch.set(ref, {
+              studentId: sid,
+              name: name,
+              school: school,
+              grade: grade,
+              role: 'student',
+              teacherId: currentTeacher, // 🛡️ 綁定老師帳號
+              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            count++;
+          }
+        });
+
+        await batch.commit();
+        toast(`✅ 成功匯入 ${count} 筆學生資料！正在更新畫面...`);
+        
+        // 🌟 關鍵修復：給 Firebase 0.5 秒的時間消化資料，然後自動重新讀取學生名單！
+        setTimeout(() => {
+          if (typeof loadStudents === 'function') {
+            loadStudents();
+          } else if (window._loadStudentsFromFirebase) {
+            window._loadStudentsFromFirebase();
+          }
+        }, 500);
+
+      } catch (err) {
+        console.error(err);
+        toast('❌ 匯入失敗：' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = ''; // 清空 input
   }
 
   // ── 學生回饋表單頁 ──
@@ -3396,6 +3634,68 @@ try {
       _fbdb.collection('ListenEvents').get().catch(()=>null),
     ]);
     // Answers 集合不再讀取（簡答題已改為選擇題，無複審需求）
+
+    // ==========================================
+  // 🌟 從 Excel 匯入學生資料並寫入 Firebase
+  // ==========================================
+  async function importExcel(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    toast(`⏳ 正在讀取 ${file.name}...`);
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const json = XLSX.utils.sheet_to_json(worksheet);
+
+        if (json.length === 0) {
+          toast('❌ 檔案內沒有資料，請確認第一列是否有標題');
+          return;
+        }
+
+        // 取得目前登入的老師帳號 (作為資料隔離的標籤)
+        const currentTeacher = document.getElementById('login-user').value || 'teacher01';
+        const batch = _fbdb.batch();
+        let count = 0;
+
+        json.forEach(row => {
+          const sid = row['學號'] ? String(row['學號']).trim() : null;
+          const name = row['姓名'] ? String(row['姓名']).trim() : '未命名';
+          const school = row['學校'] ? String(row['學校']).trim() : '';
+          const grade = row['年級'] ? String(row['年級']).trim() : '';
+
+          if (sid) {
+            const ref = _fbdb.collection('Users').doc(sid);
+            batch.set(ref, {
+              studentId: sid,
+              name: name,
+              school: school,
+              grade: grade,
+              role: 'student',
+              teacherId: currentTeacher, // 🛡️ 綁定老師帳號
+              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            count++;
+          }
+        });
+
+        await batch.commit();
+        toast(`✅ 成功匯入 ${count} 筆學生資料！`);
+        if (window._loadStudentsFromFirebase) window._loadStudentsFromFirebase();
+
+      } catch (err) {
+        console.error(err);
+        toast('❌ 匯入失敗：' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = ''; // 清空 input
+  }
 
     // ── 學生數 ──
     const totalStudents = usersSnap ? usersSnap.size : 0;
