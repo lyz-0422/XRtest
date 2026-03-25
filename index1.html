@@ -1590,7 +1590,10 @@ try {
       </div>
     </div>
 
-    <!-- ── 清除測試資料 ── -->
+    <!-- Pages container -->
+    <div class="main-content">
+
+          <!-- ── 清除測試資料 ── -->
       <div id="page-reset" style="display:none;">
         <div class="page-header">
           <div class="page-title">🗑️ 清除測試資料</div>
@@ -1655,9 +1658,6 @@ try {
           </div>
         </div>
       </div>
-
-    <!-- Pages container -->
-    <div class="main-content">
 
       <!-- ── DASHBOARD ── -->
       <div id="page-dashboard">
@@ -4287,6 +4287,48 @@ try {
     // 等待頁面切換時才載入
   });
 
+// ── 清除 Firebase 集合 ──
+  window.clearCollection = async function(collectionName, btnEl) {
+    if (!_fbdb) { alert('Firebase 尚未連線！'); return; }
+    const confirmed = confirm('確定要清除「' + collectionName + '」的所有資料？\n此動作無法復原！');
+    if (!confirmed) return;
+
+    const log = document.getElementById('reset-log');
+    if (log.innerHTML.includes('尚未執行')) log.innerHTML = '';
+    log.innerHTML += '⏳ 正在清除 ' + collectionName + '…<br>';
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '清除中…'; }
+
+    try {
+      const snapshot = await _fbdb.collection(collectionName).get();
+      if (snapshot.empty) {
+        log.innerHTML += 'ℹ️ ' + collectionName + ' 本來就是空的<br>';
+      } else {
+        const batch = _fbdb.batch();
+        snapshot.docs.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+        log.innerHTML += '✅ ' + collectionName + ' 清除完成（共 ' + snapshot.size + ' 筆）<br>';
+      }
+    } catch (err) {
+      log.innerHTML += '❌ ' + collectionName + ' 失敗：' + err.message + '<br>';
+      console.error(err);
+    }
+
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = '清除'; }
+  };
+
+  window.clearAll = async function() {
+    if (!_fbdb) { alert('Firebase 尚未連線！'); return; }
+    const confirmed = confirm('⚠️ 確定要清除全部測試資料？\n包含：Activities、ListenEvents、Scores、Answers、Feedback\n此動作無法復原！');
+    if (!confirmed) return;
+
+    document.getElementById('reset-log').innerHTML = '';
+    const cols = ['Activities', 'ListenEvents', 'Scores', 'Answers', 'Feedback'];
+    for (const col of cols) {
+      await window.clearCollection(col, null);
+    }
+    document.getElementById('reset-log').innerHTML += '<br>🎉 全部清除完成！';
+  };
+  
 </script>
 </body>
 </html>
