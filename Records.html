@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIXplore 學生 VR 測驗紀錄</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<script>
+// 初始化 Firebase
+try {
+  if(!firebase.apps || !firebase.apps.length){
+    firebase.initializeApp({
+      apiKey: "AIzaSyBvTrA2GosSz7qumSilK6rw5QuoAZRjx64",
+      authDomain: "xrtest-1d213.firebaseapp.com",
+      databaseURL: "https://xrtest-1d213-default-rtdb.firebaseio.com",
+      projectId: "xrtest-1d213",
+      storageBucket: "xrtest-1d213.firebasestorage.app",
+      messagingSenderId: "65645917782",
+      appId: "1:65645917782:web:a23de60c3ae165e2222df7"
+    });
+  }
+} catch(e){ console.warn('Firebase init error:', e.message); }
+
+  // 🌟 建立一個全域變數，用來暫存從 Firebase 抓下來的所有紀錄
+  let allVRRecords = [];
+
+  // ==========================================
+  // 1. 從 Firebase 讀取原始資料
+  // ==========================================
+  async function loadActivities() {
+    const tbody = document.getElementById('activity-tbody');
+    const meta = document.getElementById('activity-meta');
+    if (!tbody) return;
+
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text-muted);">
+      <span class="dash-spinner"></span>從 Firebase RTDB 讀取中…
+    </td></tr>`;
+
+    try {
+      const dbRef = firebase.database().ref('quiz_results');
+      const snapshot = await dbRef.once('value');
+      const data = snapshot.val();
+
+      if (!data) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text-muted);">目前沒有任何 VR 測驗紀錄</td></tr>`;
+        if (meta) meta.textContent = `共 0 筆紀錄`;
+        allVRRecords = [];
+        return;
+      }
+
+      // 將 JSON 轉為陣列並存入全域變數
+      allVRRecords = Object.keys(data).map(key => ({
+        id: key,
+        ...data[key]
+      }));
+
+      // 更新篩選下拉選單的學生名單
+      updateStudentFilterDropdown();
+      
+      // 根據目前的篩選與排序條件渲染表格
+      renderActivityTable();
+
+    } catch (e) {
+      console.error("讀取失敗:", e);
+      tbody.innerHTML = `<tr><td colspan="4" style="padding:16px; color:var(--accent3); font-size:13px; text-align:center; line-height:1.6;">
+        ⚠ 讀取失敗：${e.message}<br>
+        <span style="font-size:11px;color:var(--text-muted);">（請確認網路狀態或 Firebase 規則設定）</span>
+      </td></tr>`;
+    }
+  }
+
+  // ==========================================
+  // 2. 更新學生篩選選單 (自動抓取不重複的學生)
+  // ==========================================
+  function updateStudentFilterDropdown() {
+    const filterSelect = document.getElementById('filter-student');
+    if (!filterSelect) return;
+    
+    // 取得所有不重複的 userID
+    const uniqueStudents = [...new Set(allVRRecords.map(r => r.userID || '未知學生'))];
+    uniqueStudents.sort(); // 照字母/數字排序
+
+    // 保留「所有學生」的預設選項
+    filterSelect.innerHTML = '<option value="all">👥 所有學生</option>';
+    
+    // 將學生名單加入下拉選單
+    uniqueStudents.forEach(stu => {
+      const opt = document.createElement('option');
+      opt.value = stu;
+      opt.textContent = stu;
+      filterSelect.appendChild(opt);
+    });
+  }
+
+  // ==========================================
+  // 3. 處理篩選、排序與畫面渲染
+  // ==========================================
+  function renderActivityTable() {
+    const tbody = document.getElementById('activity-tbody');
+    const meta = document.getElementById('activity-meta');
+    const filterVal = document.getElementById('filter-student').value;
+    const sortVal = document.getElementById('sort-order').value;
+
+    // 複製一份紀錄來進行操作，避免改到原始資料
+    let processedRecords = [...allVRRecords];
+
+    // 執行篩選
+    if (filterVal !== 'all') {
+      processedRecords = processedRecords.filter(r => (r.userID || '未知學生') === filterVal);
+    }
+
+    // 執行排序
+    processedRecords.sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      return sortVal === 'desc' ? (timeB - timeA) : (timeA - timeB);
+    });
+
+    // 更新數量提示
+    if (meta) meta.textContent = `顯示 ${processedRecords.length} 筆紀錄`;
+
+    // 如果篩選後沒有資料
+    if (processedRecords.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:30px; color:var(--text-muted);">找不到符合條件的紀錄</td></tr>`;
+      return;
+    }
+
+    // 產生 HTML
+    let html = '';
+    processedRecords.forEach(d => {
+      const timeStr = d.timestamp || '未知時間';
+      const name = d.userID || '未知學生';
+      
+      const detail = `
+        <div style="margin-bottom:4px;">第一題選擇了：<strong style="color:var(--accent);">&nbsp;選項 ${d.q1Answer}&nbsp;</strong></div>
+        <div>第二題選擇了：<strong style="color:var(--accent);">&nbsp;選項 ${d.q2Answer}&nbsp;</strong></div>
+      `;
+
+      html += `<tr>
+        <td style="color:var(--text-dim); font-size:12px;">${timeStr}</td>
+        <td style="font-weight:600; color:var(--text);">${name}</td>
+        <td>
+          <span style="background:rgba(138,170,142,0.15); color:#4e7a55; border:1px solid #7aaa82; border-radius:4px; padding:3px 8px; font-size:11px; white-space:nowrap;">
+            🎮 VR 測驗回傳
+          </span>
+        </td>
+        <td style="line-height: 1.6; font-size:13px;">${detail}</td>
+      </tr>`;
+    });
+
+    tbody.innerHTML = html;
+  }
+
+  // ==========================================
+  // 即時監聽 Firebase 連線狀態
+  // ==========================================
+  function monitorFirebaseConnection() {
+    const dot = document.getElementById('fb-status-dot');
+    const text = document.getElementById('fb-status-text');
+    if (!firebase.database) return;
+
+    const connectedRef = firebase.database().ref(".info/connected");
+    connectedRef.on("value", (snap) => {
+      if (snap.val() === true) {
+        dot.className = 'fb-status-dot connected';
+        text.innerHTML = '已連線至雲端資料庫 (<strong>xrtest-1d213</strong>) — 即時接收資料中';
+      } else {
+        dot.className = 'fb-status-dot error';
+        text.innerHTML = '<span style="color:var(--accent3);">⚠ 失去連線，請檢查網路狀態</span>';
+      }
+    });
+  }
+
+  function doLogin() {
+    const u = document.getElementById('login-user').value.trim();
+    if (!u) { alert('請輸入帳號'); return; }
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    
+    loadActivities();
+    monitorFirebaseConnection();
+  }
+
+  function doLogout() {
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+  }
+
+  function fillDemo() {
+    document.getElementById('login-user').value = 'teacher01';
+    document.getElementById('login-pass').value = 'pass1234';
+  }
+</script>
+
+<style>
+  :root {
+    --bg: #edeef0; --surface: #f5f5f4; --surface2: #ebebea;
+    --border: #d8d9db; --accent: #7896a8; --accent2: #8aaa8e;
+    --accent3: #b08a84; --text: #3a3d42; --text-muted: #7b8087;
+    --text-dim: #adb0b5; --radius: 8px;
+    --shadow: 0 2px 12px rgba(100,110,120,0.10);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans TC', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  
+  /* Login Screen */
+  #login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); position: relative; }
+  #login-screen::before { content: ''; position: absolute; inset: 0; background-image: repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(120,150,168,0.07) 40px), repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(120,150,168,0.07) 40px); pointer-events: none; }
+  .login-box { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 52px 48px; width: 420px; box-shadow: var(--shadow); position: relative; z-index: 1; animation: fadeUp 0.6s ease both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+  .login-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 36px; }
+  .logo-icon { width: 44px; height: 44px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .logo-text { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .login-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .form-group { margin-bottom: 20px; }
+  .form-group label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px; font-weight: 500; }
+  .form-group input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; color: var(--text); font-size: 14px; outline: none; }
+  .form-group input:focus { border-color: var(--accent); }
+  .btn-primary { width: 100%; background: var(--accent); color: #f5f5f4; border: none; border-radius: var(--radius); padding: 13px; font-size: 15px; font-weight: 500; cursor: pointer; transition: opacity 0.2s; margin-top: 8px; }
+  .btn-primary:hover { opacity: 0.9; }
+  .demo-hint { text-align: center; margin-top: 20px; font-size: 12px; color: var(--text-dim); }
+  .demo-hint span { color: var(--accent); cursor: pointer; }
+  .demo-hint span:hover { text-decoration: underline; }
+
+  /* App Layout */
+  #app { display: none; min-height: 100vh; flex-direction: column; }
+  .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; }
+  .topbar-left { display: flex; align-items: center; gap: 16px; }
+  .topbar-logo { display: flex; align-items: center; gap: 10px; }
+  .topbar-logo .logo-icon { width: 32px; height: 32px; font-size: 16px; border-radius: 8px; }
+  .topbar-logo .logo-text { font-size: 17px; font-weight: 700; color: var(--accent); }
+  .topbar-badge { background: rgba(120,150,168,0.12); color: var(--accent); border-radius: 20px; padding: 3px 10px; font-size: 11px; }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .user-chip { display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 6px 12px; font-size: 13px; }
+  .user-avatar { width: 24px; height: 24px; background: var(--accent2); border-radius: 50%; font-size: 11px; display: flex; align-items: center; justify-content: center; color: #f5f5f4; font-weight: bold; }
+  .btn-logout { background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+  .btn-logout:hover { border-color: var(--accent3); color: var(--accent3); }
+
+  .layout { display: flex; flex: 1; }
+  .sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); padding: 20px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .nav-section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--text-dim); padding: 12px 10px 6px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; font-size: 14px; color: var(--text-muted); cursor: pointer; }
+  .nav-item.active { background: rgba(120,150,168,0.12); color: var(--accent); }
+
+  .main-content { flex: 1; padding: 32px; max-width: 1000px; margin: 0 auto; width: 100%; }
+  .page-header { margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }
+  .page-title { font-size: 24px; font-weight: 900; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .page-desc { font-size: 13px; color: var(--text-muted); }
+  .btn-small { background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  .btn-small:hover { color: var(--accent); border-color: var(--accent); }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+  .card-title { font-size: 15px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; margin-bottom: 18px; justify-content: space-between; }
+  
+  .student-table { width: 100%; border-collapse: collapse; }
+  .student-table th { background: var(--surface2); border-bottom: 1px solid var(--border); padding: 12px 14px; text-align: left; font-size: 13px; color: var(--text-muted); font-weight: 600; }
+  .student-table td { padding: 14px; border-bottom: 1px solid rgba(180,185,190,0.4); font-size: 14px; vertical-align: top; }
+  .student-table tr:last-child td { border-bottom: none; }
+  .student-table tr:hover td { background: rgba(120,150,168,0.04); }
+  
+  .dash-spinner { display:inline-block; width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:dashSpin .7s linear infinite; vertical-align:middle; margin-right:8px; }
+  
+  /* 🌟 新增的 UI 樣式：連線狀態燈與下拉選單 */
+  .fb-status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; transition: background 0.3s; }
+  .fb-status-dot.connected { background: #7aaa82; box-shadow: 0 0 0 3px rgba(122,170,130,0.2); }
+  .fb-status-dot.connecting { background: #b8a86a; animation: pulse 1s infinite; }
+  .fb-status-dot.error { background: #b08a84; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .filter-bar { display:flex; gap:12px; margin-bottom:18px; align-items:center; background:var(--surface2); padding:12px 16px; border-radius:var(--radius); border:1px solid var(--border); }
+  .fb-select { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; color: var(--text); outline: none; cursor: pointer; font-family: inherit; }
+  .fb-select:focus { border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="logo-icon">🧲</div>
+      <div>
+        <div class="logo-text">AIXplore</div>
+        <div class="login-sub">VR 測驗紀錄檢視系統</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>檢視帳號</label>
+      <input type="text" id="login-user" placeholder="請輸入帳號" value="teacher01">
+    </div>
+    <div class="form-group">
+      <label>密碼</label>
+      <input type="password" id="login-pass" placeholder="請輸入密碼" value="••••••••">
+    </div>
+    <button class="btn-primary" onclick="doLogin()">登入系統</button>
+    <div class="demo-hint">
+      示範帳號：teacher01 &nbsp;／&nbsp; 密碼：<span onclick="fillDemo()">點此填入</span>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">
+        <div class="logo-icon">🧲</div>
+        <div class="logo-text">AIXplore</div>
+      </div>
+      <div class="topbar-badge">VR 測驗紀錄</div>
+    </div>
+    <div class="topbar-right">
+      <div class="user-chip">
+        <div class="user-avatar">T</div>
+        <span>指導老師</span>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">登出</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar">
+      <div class="nav-section-label">資料檢視</div>
+      <div class="nav-item active">
+        <span class="nav-icon">🏃</span><span>學生活動紀錄</span>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="page-header">
+        <div>
+          <div class="page-title">學生活動紀錄</div>
+          <div class="page-desc">從 Unity VR 前台即時回傳的操作與測驗結果</div>
+        </div>
+        <button class="btn-small" onclick="loadActivities()">↺ 重新整理紀錄</button>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 18px; margin-bottom:20px; font-size:13px;">
+        <div id="fb-status-dot" class="fb-status-dot connecting"></div>
+        <div id="fb-status-text">檢查 Firebase 連線狀態中...</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span><span style="font-size:18px;">📜</span> 完整測驗日誌</span>
+          <span id="activity-meta" style="font-size:13px; color:var(--text-muted);"></span>
+        </div>
+
+        <div class="filter-bar">
+          <div style="font-size:13px; font-weight:600; color:var(--text-muted);">🔍 篩選與排序：</div>
+          
+          <select id="filter-student" class="fb-select" onchange="renderActivityTable()">
+            <option value="all">👥 所有學生</option>
+          </select>
+          
+          <select id="sort-order" class="fb-select" onchange="renderActivityTable()">
+            <option value="desc">🕒 時間：由新到舊</option>
+            <option value="asc">🕒 時間：由舊到新</option>
+          </select>
+        </div>
+
+        <table class="student-table">
+          <thead>
+            <tr>
+              <th style="width: 15%;">時間</th>
+              <th style="width: 20%;">學生學號</th>
+              <th style="width: 20%;">資料來源</th>
+              <th style="width: 45%;">詳細作答內容</th>
+            </tr>
+          </thead>
+          <tbody id="activity-tbody">
+            </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
